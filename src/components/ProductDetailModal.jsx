@@ -1,10 +1,23 @@
 import React, { useState } from 'react';
 
-export default function ProductDetailModal({ product, onClose }) {
+export default function ProductDetailModal({ product, onClose, onSetAlert }) {
   const images = product.images && product.images.length > 0 ? product.images : [product.image];
   const [activeImageIndex, setActiveImageIndex] = useState(0);
+  const [alertActive, setAlertActive] = useState(false);
 
   if (!product) return null;
+
+  const handleToggleAlert = () => {
+    setAlertActive(!alertActive);
+    if (onSetAlert) {
+      onSetAlert({
+        targetId: product.id,
+        targetType: 'product',
+        title: product.title,
+        subCategory: product.subCategory,
+      });
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex flex-col justify-end max-w-md mx-auto animate-fade-in">
@@ -59,10 +72,19 @@ export default function ProductDetailModal({ product, onClose }) {
           <div>
             <div className="flex items-baseline justify-between">
               <h2 className="text-xl font-black text-slate-900">{product.price}</h2>
-              <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-100">
-                Fixed / Negotiable
-              </span>
+              <button
+                type="button"
+                onClick={handleToggleAlert}
+                className={`px-3 py-1 rounded-xl text-xs font-bold transition flex items-center space-x-1 ${
+                  alertActive
+                    ? 'bg-emerald-600 text-white shadow-sm'
+                    : 'bg-indigo-50 text-indigo-700 border border-indigo-100 hover:bg-indigo-100'
+                }`}
+              >
+                <span>{alertActive ? '✓ Alert Set' : '🔔 Notify Price Drop'}</span>
+              </button>
             </div>
+            
             <h1 className="text-base font-extrabold text-slate-900 mt-1 leading-snug">
               {product.title}
             </h1>

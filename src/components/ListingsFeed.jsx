@@ -6,6 +6,10 @@ import {
   vehicleAgeFilters,
   furnitureMaterialFilters,
   furnitureConditionFilters,
+  electronicsBrandFilters,
+  electronicsWarrantyFilters,
+  fashionSizeFilters,
+  fashionConditionFilters,
   priceSortOptions,
   propertyPriceRanges,
 } from '../data/mockData';
@@ -17,12 +21,19 @@ export default function ListingsFeed({
   selectedCity,
   searchQuery,
   onBack,
+  onSetAlert,
+  onSelectListing,
 }) {
 
+  const [categoryAlertActive, setCategoryAlertActive] = useState(false);
   const [selectedBrand, setSelectedBrand] = useState('all');
   const [selectedAge, setSelectedAge] = useState('all');
   const [selectedMaterial, setSelectedMaterial] = useState('all');
   const [selectedCondition, setSelectedCondition] = useState('all');
+  const [selectedElectronicsBrand, setSelectedElectronicsBrand] = useState('all');
+  const [selectedWarranty, setSelectedWarranty] = useState('all');
+  const [selectedFashionSize, setSelectedFashionSize] = useState('all');
+  const [selectedFashionCondition, setSelectedFashionCondition] = useState('all');
   const [selectedSort, setSelectedSort] = useState('default');
   const [selectedPriceRange, setSelectedPriceRange] = useState('all');
   const [activeProductModal, setActiveProductModal] = useState(null);
@@ -32,6 +43,16 @@ export default function ListingsFeed({
     'dining', 'dressing', 'shoerack', 'studytable'
   ].includes(selectedSubCategory);
 
+  const isFashionType = [
+    'clothes', 'shirt', 'jeans', 'trouser', 'coat', 
+    'jacket', 'summer', 'winter', 'shoes'
+  ].includes(selectedSubCategory);
+
+  const isElectronicsType = [
+    'electronics', 'ac', 'tv', 'fridge', 'washingmachine', 
+    'geyser', 'pc', 'laptop', 'smartphones', 'camera', 'misc-electronics'
+  ].includes(selectedSubCategory);
+  
   const isVehicleType = [
     'vehicle', 'bike', 'car', 'scooty', 'cycle', 'jcb', 
     'tractor', 'tempo', 'erickshaw', 'pickup', 'misc'
@@ -45,8 +66,10 @@ export default function ListingsFeed({
   ].includes(selectedSubCategory);
 
   const filteredListings = listings
-   .filter((item) => {
+ .filter((item) => {
       if (selectedSubCategory !== 'all') {
+        if (isFashionType && (item.subCategory === selectedSubCategory || selectedSubCategory === 'clothes')) return true;
+        if (isElectronicsType && (item.subCategory === selectedSubCategory || selectedSubCategory === 'electronics')) return true;
         if (isFurnitureType && (item.subCategory === selectedSubCategory || selectedSubCategory === 'furniture')) return true;
         if (isVehicleType && (item.subCategory === selectedSubCategory || selectedSubCategory === 'vehicle')) return true;
         if (isPropertyType && (item.subCategory === 'property' || selectedSubCategory === 'property')) return true;
@@ -54,6 +77,36 @@ export default function ListingsFeed({
       }
       return true;
     })
+    .filter((item) => {
+      // Fashion Size Filter
+      if (isFashionType && selectedFashionSize !== 'all') {
+        return item.size === selectedFashionSize;
+      }
+      return true;
+    })
+    .filter((item) => {
+      // Fashion Condition Filter
+      if (isFashionType && selectedFashionCondition !== 'all') {
+        return item.condition === selectedFashionCondition;
+      }
+      return true;
+    })
+
+    .filter((item) => {
+      // Electronics Brand Filter
+      if (isElectronicsType && selectedElectronicsBrand !== 'all') {
+        return item.brand === selectedElectronicsBrand;
+      }
+      return true;
+    })
+    .filter((item) => {
+      // Electronics Warranty / Condition Filter
+      if (isElectronicsType && selectedWarranty !== 'all') {
+        return item.condition === selectedWarranty;
+      }
+      return true;
+    })
+
     .filter((item) => {
       // Furniture Material Filter
       if (isFurnitureType && selectedMaterial !== 'all') {
@@ -119,14 +172,173 @@ export default function ListingsFeed({
             </h2>
             <p className="text-[10px] text-slate-500">Showing verified items for {selectedCity}</p>
           </div>
-          <button
-            type="button"
-            onClick={onBack}
-            className="text-xs bg-indigo-50 text-indigo-700 px-3 py-1.5 rounded-xl font-bold border border-indigo-100 active:scale-95 transition cursor-pointer"
-          >
-            ← Back
-          </button>
+          <div className="flex items-center space-x-2">
+            <button
+              type="button"
+              onClick={() => {
+                setCategoryAlertActive(!categoryAlertActive);
+                if (onSetAlert) {
+                  onSetAlert({
+                    targetType: 'category',
+                    title: `${selectedSubCategory.toUpperCase()} Arrivals`,
+                    subCategory: selectedSubCategory,
+                  });
+                }
+              }}
+              className={`text-xs px-2.5 py-1.5 rounded-xl font-bold transition flex items-center space-x-1 ${
+                categoryAlertActive
+                  ? 'bg-emerald-600 text-white'
+                  : 'bg-amber-50 text-amber-800 border border-amber-200'
+              }`}
+            >
+              <span>{categoryAlertActive ? '✓ Alert Active' : '🔔 Notify Me'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={onBack}
+              className="text-xs bg-indigo-50 text-indigo-700 px-3 py-1.5 rounded-xl font-bold border border-indigo-100 active:scale-95 transition cursor-pointer"
+            >
+              ← Back
+            </button>
+          </div>
         </div>
+
+       {/* FASHION SMART FILTERS: SIZE, CONDITION, SORT */}
+        {isFashionType && (
+          <div className="space-y-2 pt-1 border-t border-slate-100">
+            <div>
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 block">
+                Size / Fit
+              </span>
+              <div className="flex space-x-1.5 overflow-x-auto no-scrollbar pb-0.5">
+                {fashionSizeFilters.map((sz) => (
+                  <button
+                    key={sz.id}
+                    onClick={() => setSelectedFashionSize(sz.id)}
+                    className={`px-3 py-1 rounded-xl text-xs font-bold whitespace-nowrap transition ${
+                      selectedFashionSize === sz.id
+                        ? 'bg-rose-600 text-white shadow-sm'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    {sz.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 block">
+                Condition / Tag
+              </span>
+              <div className="flex space-x-1.5 overflow-x-auto no-scrollbar pb-0.5">
+                {fashionConditionFilters.map((fc) => (
+                  <button
+                    key={fc.id}
+                    onClick={() => setSelectedFashionCondition(fc.id)}
+                    className={`px-3 py-1 rounded-xl text-xs font-bold whitespace-nowrap transition ${
+                      selectedFashionCondition === fc.id
+                        ? 'bg-slate-900 text-white shadow-sm'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    {fc.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 block">
+                Sort Price Range
+              </span>
+              <div className="flex space-x-1.5 overflow-x-auto no-scrollbar pb-0.5">
+                {priceSortOptions.map((opt) => (
+                  <button
+                    key={opt.id}
+                    onClick={() => setSelectedSort(opt.id)}
+                    className={`px-3 py-1 rounded-xl text-xs font-bold whitespace-nowrap transition ${
+                      selectedSort === opt.id
+                        ? 'bg-emerald-600 text-white shadow-sm'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ELECTRONICS SMART FILTERS: BRAND, WARRANTY, SORT */}
+        
+        {isElectronicsType && (
+          <div className="space-y-2 pt-1 border-t border-slate-100">
+            <div>
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 block">
+                Brand / Manufacturer
+              </span>
+              <div className="flex space-x-1.5 overflow-x-auto no-scrollbar pb-0.5">
+                {electronicsBrandFilters.map((eb) => (
+                  <button
+                    key={eb.id}
+                    onClick={() => setSelectedElectronicsBrand(eb.id)}
+                    className={`px-3 py-1 rounded-xl text-xs font-bold whitespace-nowrap transition ${
+                      selectedElectronicsBrand === eb.id
+                        ? 'bg-teal-600 text-white shadow-sm'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    {eb.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 block">
+                Condition / Warranty
+              </span>
+              <div className="flex space-x-1.5 overflow-x-auto no-scrollbar pb-0.5">
+                {electronicsWarrantyFilters.map((w) => (
+                  <button
+                    key={w.id}
+                    onClick={() => setSelectedWarranty(w.id)}
+                    className={`px-3 py-1 rounded-xl text-xs font-bold whitespace-nowrap transition ${
+                      selectedWarranty === w.id
+                        ? 'bg-slate-900 text-white shadow-sm'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    {w.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 block">
+                Sort Price Range
+              </span>
+              <div className="flex space-x-1.5 overflow-x-auto no-scrollbar pb-0.5">
+                {priceSortOptions.map((opt) => (
+                  <button
+                    key={opt.id}
+                    onClick={() => setSelectedSort(opt.id)}
+                    className={`px-3 py-1 rounded-xl text-xs font-bold whitespace-nowrap transition ${
+                      selectedSort === opt.id
+                        ? 'bg-emerald-600 text-white shadow-sm'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* FURNITURE SMART FILTERS: MATERIAL, CONDITION, SORT */}
         {isFurnitureType && (
@@ -374,6 +586,7 @@ export default function ListingsFeed({
         <ProductDetailModal
           product={activeProductModal}
           onClose={() => setActiveProductModal(null)}
+          onSetAlert={onSetAlert}
         />
       )}
     </main>

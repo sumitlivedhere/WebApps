@@ -1,6 +1,11 @@
 import React, { useState } from 'react';
 
-export default function VoiceSearchBar({ searchQuery, setSearchQuery, onSearchSubmit }) {
+export default function VoiceSearchBar({
+  searchQuery,
+  setSearchQuery,
+  onSearchSubmit,
+  placeholder = 'Search across all town services, shops & items...',
+}) {
   const [isListening, setIsListening] = useState(false);
   const [selectedLang, setSelectedLang] = useState('hi-IN'); // Default Hindi (India)
   const [listeningText, setListeningText] = useState('Sun rahe hain... Boliyega');
@@ -64,12 +69,12 @@ export default function VoiceSearchBar({ searchQuery, setSearchQuery, onSearchSu
         </select>
 
         {/* Text Input */}
-        <input 
-          type="text" 
+        <input
+          type="text"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder={selectedLang === 'hi-IN' ? "बोल कर खोजें (जैसे: 'बाइक', 'राजू किराना')..." : "Speak to search..."}
-          className="w-full text-xs bg-transparent text-slate-900 placeholder-slate-400 focus:outline-none"
+          placeholder={placeholder}
+          className="w-full pl-9 pr-10 py-2.5 bg-white/95 rounded-2xl text-xs text-slate-900 placeholder-slate-400 font-bold focus:outline-none focus:ring-2 focus:ring-amber-400 shadow-inner truncate"
         />
 
         {/* Clear Button */}
