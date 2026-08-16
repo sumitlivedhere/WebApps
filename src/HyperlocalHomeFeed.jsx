@@ -10,10 +10,19 @@ import ElectronicsHub from './categories/ElectronicsHub';
 import FashionHub from './categories/FashionHub';
 import MarketHub from './categories/MarketHub';
 import MarketFeed from './components/MarketFeed';
+import KaarigarHub from './categories/KaarigarHub';
+import CommunityHub from './categories/CommunityHub';
+import CommunityFeed from './components/CommunityFeed';
+import KaarigarWorkerList from './components/KaarigarWorkerList';
 import ListingsFeed from './components/ListingsFeed';
-import { initialMarketProducts, marketCategories } from './data/marketData';
 import NotificationCenter from './components/NotificationCenter';
+import TransporterHub from './categories/TransporterHub';
+import TransporterFeed from './components/TransporterFeed';
+import { initialTransportFirms, initialIndividualTransporters } from './data/transporterData';
+import { initialKaarigarWorkers } from './data/kaarigarData';
+import { initialMarketProducts, marketCategories } from './data/marketData';
 import { initialListings } from './data/mockData';
+import { initialCommunityDrives } from './data/communityData';
 
 export default function HyperlocalHomeFeed() {
   const [userMode, setUserMode] = useState('buyer'); // 'buyer' | 'provider'
@@ -26,6 +35,11 @@ export default function HyperlocalHomeFeed() {
   const [searchQuery, setSearchQuery] = useState('');
   const [listings, setListings] = useState(initialListings);
   const [marketProducts, setMarketProducts] = useState(initialMarketProducts);
+  const [kaarigarWorkers, setKaarigarWorkers] = useState(initialKaarigarWorkers);
+  const [transportFirms, setTransportFirms] = useState(initialTransportFirms);
+  const [individualTransporters, setIndividualTransporters] = useState(initialIndividualTransporters);
+  const [communityDrives, setCommunityDrives] = useState(initialCommunityDrives);
+  const [transporterViewMode, setTransporterViewMode] = useState('firms'); // 'firms' | 'individual'
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
 
 
@@ -109,6 +123,15 @@ export default function HyperlocalHomeFeed() {
       case 'market-hub':
       case 'market-feed':
         return 'Market (बाज़ार)';
+      case 'kaarigar-hub':
+      case 'kaarigar-feed':
+        return 'Kaarigar (कारीगर व सेवाएँ)';
+      case 'transporter-hub':
+      case 'transporter-feed':
+        return 'Transporter (ट्रांसपोर्ट व लोडिंग)';
+      case 'community-hub':
+      case 'community-feed':
+        return 'Community (समाज सेवा)';
       case 'listings':
         return selectedSubCategory !== 'all' ? selectedSubCategory.toUpperCase() : 'Listings';
       default:
@@ -305,6 +328,12 @@ export default function HyperlocalHomeFeed() {
               navigateForward({ screen: 'fashion-hub', category: catId });
             } else if (catId === 'market') {
               navigateForward({ screen: 'market-hub', category: catId });
+            } else if (catId === 'kaarigar') {
+              navigateForward({ screen: 'kaarigar-hub', category: catId });
+           } else if (catId === 'transporters') {
+              navigateForward({ screen: 'transporter-hub', category: catId });
+            } else if (catId === 'community' || catId === 'social-welfare') {
+              navigateForward({ screen: 'community-hub', category: catId });
             } else {
               navigateForward({ screen: 'category-hub', category: catId });
             }
@@ -349,6 +378,75 @@ export default function HyperlocalHomeFeed() {
         />
       )}
 
+      {/* DEDICATED KAARIGAR HUB (19 TRADES) */}
+      {userMode === 'buyer' && currentScreen === 'kaarigar-hub' && (
+        <KaarigarHub
+          onSelectTrade={(tradeId) => {
+            navigateForward({ screen: 'kaarigar-feed', subCategory: tradeId });
+          }}
+          onBack={goBack}
+        />
+      )}
+
+     {/* KAARIGAR WORKER LIST (5-DIMENSION RATINGS, SLOTS, WHATSAPP) */}
+      {userMode === 'buyer' && currentScreen === 'kaarigar-feed' && (
+        <KaarigarWorkerList
+          workers={kaarigarWorkers}
+          selectedTradeId={selectedSubCategory}
+          selectedCity={selectedCity}
+          searchQuery={searchQuery}
+          onBack={goBack}
+        />
+      )}
+
+      {/* DEDICATED TRANSPORTER HUB (FIRMS VS PERSONAL VEHICLE OWNERS) */}
+      {userMode === 'buyer' && currentScreen === 'transporter-hub' && (
+        <TransporterHub
+          onSelectFirms={() => {
+            setTransporterViewMode('firms');
+            navigateForward({ screen: 'transporter-feed', subCategory: 'firms' });
+          }}
+          onSelectIndividualVehicle={(vehicleId) => {
+            setTransporterViewMode('individual');
+            navigateForward({ screen: 'transporter-feed', subCategory: vehicleId });
+          }}
+          onBack={goBack}
+        />
+      )}
+
+     {/* TRANSPORTER FEED (FLEET FIRMS VS INDIVIDUAL DRIVERS WITH 5-STAR RATINGS) */}
+      {userMode === 'buyer' && currentScreen === 'transporter-feed' && (
+        <TransporterFeed
+          viewMode={transporterViewMode}
+          firms={transportFirms}
+          individualTransporters={individualTransporters}
+          selectedVehicleType={selectedSubCategory}
+          selectedCity={selectedCity}
+          searchQuery={searchQuery}
+          onBack={goBack}
+        />
+      )}
+
+      {/* DEDICATED COMMUNITY SERVICES HUB */}
+      {userMode === 'buyer' && currentScreen === 'community-hub' && (
+        <CommunityHub
+          onSelectPillar={(pillarId) => {
+            navigateForward({ screen: 'community-feed', subCategory: pillarId });
+          }}
+          onBack={goBack}
+        />
+      )}
+
+      {/* COMMUNITY FEED (TIMING, VENUE, VOLUNTEERS & DONATIONS) */}
+      {userMode === 'buyer' && currentScreen === 'community-feed' && (
+        <CommunityFeed
+          drives={communityDrives}
+          selectedPillarId={selectedSubCategory}
+          selectedCity={selectedCity}
+          searchQuery={searchQuery}
+          onBack={goBack}
+        />
+      )}
      {/* DEDICATED ELECTRONICS HUB (10 CATEGORIES) */}
       {userMode === 'buyer' && currentScreen === 'electronics-hub' && (
         <ElectronicsHub
@@ -402,7 +500,7 @@ export default function HyperlocalHomeFeed() {
               navigateForward({ screen: 'property-hub' });
             } else if (subCatId === 'vehicle') {
               navigateForward({ screen: 'vehicle-hub' });
-           } else if (subCatId === 'furniture') {
+            } else if (subCatId === 'furniture') {
               navigateForward({ screen: 'furniture-hub' });
             } else if (subCatId === 'electronics') {
               navigateForward({ screen: 'electronics-hub' });
@@ -410,6 +508,12 @@ export default function HyperlocalHomeFeed() {
               navigateForward({ screen: 'fashion-hub' });
             } else if (subCatId === 'market') {
               navigateForward({ screen: 'market-hub' });
+            } else if (subCatId === 'kaarigar') {
+              navigateForward({ screen: 'kaarigar-hub' });
+            } else if (subCatId === 'transporters') {
+              navigateForward({ screen: 'transporter-hub' });
+            } else if (subCatId === 'community' || subCatId === 'social-welfare') {
+              navigateForward({ screen: 'community-hub' });
             } else {
               navigateForward({ screen: 'listings', subCategory: subCatId });
             }
