@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import VoiceSearchBar from './VoiceSearchBar';
 
 export default function HyperlocalHomeFeed() {
-  const [activeTab, setActiveTab] = useState('classified'); // Default to Buy/Sell
+  const [activeTab, setActiveTab] = useState('all'); // Default to all so hub shows
   const [selectedSubCategory, setSelectedSubCategory] = useState('all');
   const [selectedCity, setSelectedCity] = useState('Alwar - Central');
   const [searchQuery, setSearchQuery] = useState('');
@@ -81,6 +81,12 @@ export default function HyperlocalHomeFeed() {
     { id: 'matrimony', name: 'Shadi (विवाह)', desc: 'Local Matrimony & Wedding Vendors', icon: '💍', accent: 'from-pink-500/10 to-rose-500/20 text-pink-600' },
     { id: 'healthcare', name: 'Healthcare / Medical (स्वास्थ्य सेवाएँ)', desc: 'Emergency Doctors, Chemists, Blood Banks & Labs', icon: '🏥', accent: 'from-emerald-500/10 to-teal-500/20 text-emerald-600' },
     { id: 'festival', name: 'Festival / Utsav (त्योहार / उत्सव)', desc: 'Local Mela, Pandal, Garba, Events & Pujas', icon: '🎉', accent: 'from-violet-500/10 to-purple-500/20 text-purple-600' },
+    { id: 'construction', name: 'Construction (निर्माण कार्य)', desc: 'Builders, Masons, Architects & Building Material', icon: '🏗️', accent: 'from-amber-600/10 to-yellow-500/20 text-amber-700' },
+    { id: 'teaching', name: 'Teaching / Coaching (शिक्षण / कोचिंग)', desc: 'Tutors, Tuition Classes, Competitive Coaching & Institutes', icon: '📚', accent: 'from-blue-600/10 to-indigo-500/20 text-blue-700' },
+    { id: 'malls', name: 'Malls & Shopping (मॉल और बाजार)', desc: 'Clothing Outlets, Multiplexes, Brands & Supermarkets', icon: '🛍️', accent: 'from-pink-600/10 to-rose-500/20 text-pink-700' },
+    { id: 'restaurants', name: 'Restaurants & Cafes (रेस्टोरेंट और कैफे)', desc: 'Dine-in, Food Delivery, Street Food & Cafes', icon: '🍔', accent: 'from-orange-500/10 to-red-500/20 text-orange-600' },
+    { id: 'white-collar', name: 'White Collar Services (वाइट कॉलर सेवाएँ)', desc: 'CAs, Lawyers, Financial Consultants & IT Experts', icon: '👔', accent: 'from-slate-600/10 to-zinc-500/20 text-slate-800' },
+    { id: 'creative', name: 'Creative Professionals (क्रिएटिव प्रोफेशनल्स)', desc: 'Photographers, Videographers, Designers & Event Planners', icon: '📸', accent: 'from-purple-600/10 to-pink-500/20 text-purple-700' },
   ];
 
   // PROPERTY SPECIFIC PRICE FILTERS
@@ -289,80 +295,78 @@ export default function HyperlocalHomeFeed() {
       </header>
 
       {/* 2. MAIN NAVIGATION TABS */}
-      <nav className="sticky top-[102px] z-20 flex space-x-2 p-3 overflow-x-auto no-scrollbar bg-white/70 backdrop-blur-md border-b border-slate-200/60 shadow-sm">
-        {[
-          { id: 'classified', label: '🏷️ Buy/Sell Used' },
-          { id: 'shop', label: '🏪 Local Shops' },
-          { id: 'deal', label: '🔥 Town Deals' },
-          { id: 'all', label: '🌟 All Feed' },
-        ].map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => {
-              setActiveTab(tab.id);
-              handleSelectSubCategory('all');
-            }}
-            className={`px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all duration-200 ${
-              activeTab === tab.id
-                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/30 scale-105'
-                : 'bg-white/80 text-slate-600 border border-slate-200/80 hover:bg-slate-100'
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </nav>
-
-      {/* 3. CONCENTRATED FLOATING INTEREST TILES (3-4 VISIBLE PER PAGE VIEW) */}
+      
+     {/*3 BUY / SELL CONCENTRATED FOCUS VIEW */}
       {selectedSubCategory === 'all' && (
-        <section className="px-4 py-3 relative z-10">
-          <div className="mb-3.5 flex justify-between items-center">
-            <div>
-              <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-full border border-indigo-100">
-                Explore Town Hub
-              </span>
-              <h2 className="text-base font-black text-slate-900 mt-1 leading-tight">
-                Aapki Pasand (Select Interest)
-              </h2>
-            </div>
-            <span className="text-[11px] text-slate-400 font-medium">Scroll down for more ↓</span>
+        <section className="px-4 py-4 relative z-10">
+          
+          <div className="mb-4">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-100">
+              Re-commerce Hub (खरीदो-बेचो)
+            </span>
+            <h2 className="text-lg font-black text-slate-900 mt-1.5 leading-tight">
+              What would you like to buy or sell?
+            </h2>
           </div>
 
-          {/* Floaty Tiles Stack */}
-          <div className="space-y-3.5 pb-6">
-            {townInterestCategories.map((cat) => (
+     {/* 6 Clean Floating Tiles Stacked Vertically */}
+       <div className="space-y-3.5 pb-6">
+            {[
+              { id: 'property', name: 'Property', desc: 'Flats, land, independent houses & rentals', icon: '🏠', accent: 'from-amber-500/10 to-orange-500/20 text-orange-600' },
+              { id: 'vehicle', name: 'Vehicles', desc: 'Used bikes, scooters, cars & parts', icon: '🚗', accent: 'from-blue-500/10 to-indigo-500/20 text-indigo-600' },
+              { id: 'furniture', name: 'Furniture', desc: 'Sofa sets, wooden beds & dining tables', icon: '🪑', accent: 'from-purple-500/10 to-pink-500/20 text-purple-600' },
+              { id: 'electronics', name: 'Electronics', desc: 'Smartphones, LED TVs, laptops & appliances', icon: '📱', accent: 'from-emerald-500/10 to-teal-500/20 text-emerald-600' },
+              { id: 'clothes', name: 'Clothes & Fashion', desc: 'Traditional wear, jackets & accessories', icon: '👕', accent: 'from-rose-500/10 to-pink-500/20 text-rose-600' },
+              { id: 'misc', name: 'Miscellaneous', desc: 'Other used goods, books & town items', icon: '📦', accent: 'from-slate-500/10 to-zinc-500/20 text-slate-700' },
+            ].map((tile) => (
               <div
-                key={cat.id}
-                onClick={() => handleSelectSubCategory(cat.id === 're-commerce' ? 'vehicle' : cat.id)}
-                className="group relative bg-white/80 backdrop-blur-xl border border-white/90 rounded-2xl p-4 shadow-[0_8px_25px_rgba(0,0,0,0.04)] hover:shadow-[0_12px_30px_rgba(99,102,241,0.15)] hover:-translate-y-1 active:scale-[0.98] transition-all duration-300 cursor-pointer overflow-hidden min-h-[92px] flex items-center"
+                key={tile.id}
+                onClick={() => setSelectedSubCategory(tile.id)}
+                className="group relative bg-white/85 backdrop-blur-xl border border-white/90 rounded-2xl p-4 shadow-[0_8px_25px_rgba(0,0,0,0.04)] hover:shadow-[0_12px_30px_rgba(99,102,241,0.15)] hover:-translate-y-1 active:scale-[0.98] transition-all duration-300 cursor-pointer overflow-hidden min-h-[88px] flex items-center"
               >
-                <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-indigo-500 rounded-l-2xl opacity-80 group-hover:w-2 transition-all"></div>
+                <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-emerald-500 rounded-l-2xl opacity-80 group-hover:w-2 transition-all"></div>
 
                 <div className="flex items-center justify-between pl-2 w-full">
                   <div className="flex items-center space-x-3.5">
-                    <div className={`w-13 h-13 rounded-2xl bg-gradient-to-br ${cat.accent} flex items-center justify-center text-2xl shadow-inner border border-white/60 group-hover:scale-110 transition-transform duration-300`}>
-                      {cat.icon}
+                    <div className={`w-12 h-12 rounded-2xl bg-gradient-to-br ${tile.accent} flex items-center justify-center text-2xl shadow-inner border border-white/60 group-hover:scale-110 transition-transform duration-300`}>
+                      {tile.icon}
                     </div>
 
                     <div>
-                      <h3 className="text-base font-extrabold text-slate-900 group-hover:text-indigo-600 transition-colors">
-                        {cat.name}
+                      <h3 className="text-base font-extrabold text-slate-900 group-hover:text-emerald-700 transition-colors">
+                        {tile.name}
                       </h3>
                       <p className="text-xs text-slate-500 font-normal mt-0.5 leading-snug">
-                        {cat.desc}
+                        {tile.desc}
                       </p>
                     </div>
                   </div>
 
-                  <div className="w-8 h-8 rounded-full bg-slate-100/80 group-hover:bg-indigo-600 group-hover:text-white flex items-center justify-center text-slate-400 text-sm font-bold transition-all duration-300 shadow-sm ml-2 shrink-0">
+                  <div className="w-8 h-8 rounded-full bg-slate-100/80 group-hover:bg-emerald-600 group-hover:text-white flex items-center justify-center text-slate-400 text-sm font-bold transition-all duration-300 shadow-sm ml-2 shrink-0">
                     ➔
                   </div>
                 </div>
               </div>
             ))}
+
+      {/* Simple Back Button to Main Hub */}
+            <div className="pt-4 text-center">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSelectedSubCategory('all');
+                  setActiveTab('all');
+                }}
+                className="w-full py-3 bg-white/90 hover:bg-slate-100 text-slate-800 rounded-2xl border border-slate-200 text-xs font-black shadow-sm active:scale-95 transition cursor-pointer"
+              >
+                ← Back
+              </button>
+            </div>
           </div>
         </section>
       )}
+
 
       {/* 4. LISTINGS FEED WITH DYNAMIC SORTING / PRICE BRACKETS */}
       {(activeTab !== 'classified' || selectedSubCategory !== 'all') && (
