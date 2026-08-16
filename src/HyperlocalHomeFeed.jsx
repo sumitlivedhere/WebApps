@@ -3,14 +3,17 @@ import VoiceSearchBar from './VoiceSearchBar';
 import ProviderDashboard from './ProviderDashboard';
 import TownHubView from './categories/TownHubView';
 import CategoryHub from './categories/CategoryHub';
+import PropertyHub from './categories/PropertyHub';
 import ListingsFeed from './components/ListingsFeed';
 import { initialListings } from './data/mockData';
 
 export default function HyperlocalHomeFeed() {
   const [userMode, setUserMode] = useState('buyer'); // 'buyer' | 'provider'
-  const [currentScreen, setCurrentScreen] = useState('hub'); // 'hub' | 'category-hub' | 'listings'
+  const [currentScreen, setCurrentScreen] = useState('hub'); // 'hub' | 'category-hub' | 'property-hub' | 'listings'
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedSubCategory, setSelectedSubCategory] = useState('all');
+  const [nestedPropType, setNestedPropType] = useState(null); // 'house' | 'tenancy' | null
+  const [history, setHistory] = useState([]); // GLOBAL NAVIGATION HISTORY
   const [selectedCity, setSelectedCity] = useState('Alwar - Central');
   const [searchQuery, setSearchQuery] = useState('');
   const [listings, setListings] = useState(initialListings);
@@ -18,6 +21,44 @@ export default function HyperlocalHomeFeed() {
   const handleSearchSubmit = (query) => {
     console.log('Searching backend for:', query);
   };
+
+  // --- GLOBAL NAVIGATION ENGINE ---
+  const navigateForward = (updates) => {
+    // Save a snapshot of the current state before moving forward
+    setHistory((prev) => [
+      ...prev,
+      { currentScreen, selectedCategory, selectedSubCategory, nestedPropType },
+    ]);
+    // Apply new state
+    if (updates.screen !== undefined) setCurrentScreen(updates.screen);
+    if (updates.category !== undefined) setSelectedCategory(updates.category);
+    if (updates.subCategory !== undefined) setSelectedSubCategory(updates.subCategory);
+    if (updates.nestedPropType !== undefined) setNestedPropType(updates.nestedPropType);
+  };
+
+  const goBack = () => {
+    if (history.length > 0) {
+      // Pop the last snapshot and restore it exactly
+      const prev = history[history.length - 1];
+      setHistory((h) => h.slice(0, -1));
+      setCurrentScreen(prev.currentScreen);
+      setSelectedCategory(prev.selectedCategory);
+      setSelectedSubCategory(prev.selectedSubCategory);
+      setNestedPropType(prev.nestedPropType);
+    } else {
+      // Fallback if at root
+      setCurrentScreen('hub');
+      setSelectedCategory('all');
+      setSelectedSubCategory('all');
+      setNestedPropType(null);
+    }
+  };
+
+  const isPropertyType = [
+  'property', 'tenancy', 'rent-house', 'rent-shop', 
+  'flat', 'plot', 'land', 'shop', 
+  'house-1bhk', 'house-2bhk', 'house-3bhk', 'house-large', 'house-1floor', 'house-2floor'
+].includes(selectedSubCategory);
 
   return (
     <div className="max-w-md mx-auto min-h-screen bg-slate-900/5 backdrop-blur-2xl pb-24 text-slate-800 font-sans relative overflow-hidden">
@@ -90,32 +131,49 @@ export default function HyperlocalHomeFeed() {
         />
       )}
 
-      {/* 3. SCREEN 1: HOMEPAGE (18 INTEREST TILES) */}
+{/* 3. SCREEN 1: HOMEPAGE (18 INTEREST TILES) */}
       {userMode === 'buyer' && currentScreen === 'hub' && (
         <TownHubView
           onSelectCategory={(catId) => {
-            setSelectedCategory(catId);
-            setCurrentScreen('category-hub');
+            if (catId === 'property') {
+              navigateForward({ screen: 'property-hub', category: catId });
+            } else {
+              navigateForward({ screen: 'category-hub', category: catId });
+            }
           }}
         />
       )}
 
-      {/* 4. SCREEN 2: SUB-CATEGORY SELECTION HUB */}
+      {/* 4. DEDICATED PROPERTY HUB SCREEN */}
+      {userMode === 'buyer' && currentScreen === 'property-hub' && (
+        <PropertyHub
+          nestedPropType={nestedPropType}
+          onSelectNestedType={(type) => {
+            navigateForward({ nestedPropType: type });
+          }}
+          onSelectPropertyType={(propType) => {
+            navigateForward({ screen: 'listings', subCategory: propType });
+          }}
+          onBack={goBack}
+        />
+      )}
+
+      {/* 5. DYNAMIC CATEGORY HUB */}
       {userMode === 'buyer' && currentScreen === 'category-hub' && (
         <CategoryHub
           categoryId={selectedCategory}
           onSelectSubCategory={(subCatId) => {
-            setSelectedSubCategory(subCatId);
-            setCurrentScreen('listings');
+            if (subCatId === 'property') {
+              navigateForward({ screen: 'property-hub' });
+            } else {
+              navigateForward({ screen: 'listings', subCategory: subCatId });
+            }
           }}
-          onBack={() => {
-            setSelectedCategory('all');
-            setCurrentScreen('hub');
-          }}
+          onBack={goBack}
         />
       )}
 
-      {/* 5. SCREEN 3: LISTINGS FEED */}
+      {/* 6. LISTINGS FEED */}
       {userMode === 'buyer' && currentScreen === 'listings' && (
         <ListingsFeed
           listings={listings}
@@ -123,13 +181,10 @@ export default function HyperlocalHomeFeed() {
           selectedSubCategory={selectedSubCategory}
           selectedCity={selectedCity}
           searchQuery={searchQuery}
-          onBack={() => {
-            setSelectedSubCategory('all');
-            setCurrentScreen('category-hub');
-          }}
+          onBack={goBack}
         />
       )}
-
+      
       {/* 6. BOTTOM NAVIGATION */}
       <footer className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white/90 backdrop-blur-md border-t border-slate-200 px-4 py-2 flex justify-around items-center z-30">
         <button

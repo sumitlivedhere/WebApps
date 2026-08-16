@@ -18,13 +18,21 @@ export default function ListingsFeed({
   const [selectedBrand, setSelectedBrand] = useState('all');
   const [selectedVehicleType, setSelectedVehicleType] = useState('all');
 
-  const filteredListings = listings
+const isPropertyType = [
+  'property', 'tenancy', 'rent-house', 'rent-shop', 
+  'flat', 'plot', 'land', 'shop', 
+  'house-1bhk', 'house-2bhk', 'house-3bhk', 'house-large', 'house-1floor', 'house-2floor'
+].includes(selectedSubCategory);
+
+const filteredListings = listings
     .filter((item) => {
       if (selectedSubCategory !== 'all') {
+        if (isPropertyType && item.subCategory === 'property') return true;
         return item.subCategory === selectedSubCategory;
       }
       return true;
     })
+
     .filter((item) => {
       if (selectedSubCategory === 'vehicle') {
         if (selectedVehicleType !== 'all' && item.vehicleType && item.vehicleType !== selectedVehicleType) {
@@ -121,7 +129,7 @@ export default function ListingsFeed({
           </div>
 
           {/* Property Price Filters */}
-          {selectedSubCategory === 'property' && (
+          {isPropertyType && (
             <div>
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">
                 Filter by Price Range

@@ -3,6 +3,7 @@ import React from 'react';
 export default function TownHubView({ onSelectCategory }) {
   const townInterestCategories = [
     { id: 're-commerce', name: 'Re-commerce (खरीदो-बेचो)', desc: 'Used Bikes, Cars, Property & Mobiles', icon: '🛍️', accent: 'from-indigo-500/10 to-blue-500/20 text-indigo-600' },
+    { id: 'property', name: 'Property (प्रॉपर्टी)', desc: 'Plots, Flats, Houses, Shops & Land', icon: '🏠', accent: 'from-amber-500/10 to-orange-500/20 text-amber-600' },
     { id: 'market', name: 'Market (बाज़ार)', desc: 'Local Shops, Showrooms & Products', icon: '🏪', accent: 'from-emerald-500/10 to-teal-500/20 text-emerald-600' },
     { id: 'kaarigar', name: 'Kaarigar (कारीगर)', desc: 'Plumbers, Electricians, Carpenters & Mechanics', icon: '🛠️', accent: 'from-amber-500/10 to-orange-500/20 text-amber-600' },
     { id: 'transporters', name: 'Transporters (ट्रांसपोर्ट)', desc: 'Goods Pickups, Packers & Tempo Services', icon: '🚚', accent: 'from-purple-500/10 to-violet-500/20 text-purple-600' },
