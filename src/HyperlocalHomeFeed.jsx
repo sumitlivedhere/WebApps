@@ -4,6 +4,8 @@ import ProviderDashboard from './ProviderDashboard';
 import TownHubView from './categories/TownHubView';
 import CategoryHub from './categories/CategoryHub';
 import PropertyHub from './categories/PropertyHub';
+import VehicleHub from './categories/VehicleHub';
+import FurnitureHub from './categories/FurnitureHub';
 import ListingsFeed from './components/ListingsFeed';
 import { initialListings } from './data/mockData';
 
@@ -137,10 +139,34 @@ export default function HyperlocalHomeFeed() {
           onSelectCategory={(catId) => {
             if (catId === 'property') {
               navigateForward({ screen: 'property-hub', category: catId });
+            } else if (catId === 'vehicle') {
+              navigateForward({ screen: 'vehicle-hub', category: catId });
+            } else if (catId === 'furniture') {
+              navigateForward({ screen: 'furniture-hub', category: catId });
             } else {
               navigateForward({ screen: 'category-hub', category: catId });
             }
           }}
+        />
+      )}
+
+      {/* DEDICATED FURNITURE HUB (8 CATEGORIES) */}
+      {userMode === 'buyer' && currentScreen === 'furniture-hub' && (
+        <FurnitureHub
+          onSelectFurnitureType={(fType) => {
+            navigateForward({ screen: 'listings', subCategory: fType });
+          }}
+          onBack={goBack}
+        />
+      )}
+
+      {/* DEDICATED VEHICLE HUB (10 CATEGORIES) */}
+      {userMode === 'buyer' && currentScreen === 'vehicle-hub' && (
+        <VehicleHub
+          onSelectVehicleType={(vType) => {
+            navigateForward({ screen: 'listings', subCategory: vType });
+          }}
+          onBack={goBack}
         />
       )}
 
@@ -158,13 +184,17 @@ export default function HyperlocalHomeFeed() {
         />
       )}
 
-      {/* 5. DYNAMIC CATEGORY HUB */}
+     {/* 5. DYNAMIC CATEGORY HUB */}
       {userMode === 'buyer' && currentScreen === 'category-hub' && (
         <CategoryHub
           categoryId={selectedCategory}
           onSelectSubCategory={(subCatId) => {
             if (subCatId === 'property') {
               navigateForward({ screen: 'property-hub' });
+            } else if (subCatId === 'vehicle') {
+              navigateForward({ screen: 'vehicle-hub' });
+            } else if (subCatId === 'furniture') {
+              navigateForward({ screen: 'furniture-hub' });
             } else {
               navigateForward({ screen: 'listings', subCategory: subCatId });
             }
@@ -184,7 +214,7 @@ export default function HyperlocalHomeFeed() {
           onBack={goBack}
         />
       )}
-      
+
       {/* 6. BOTTOM NAVIGATION */}
       <footer className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white/90 backdrop-blur-md border-t border-slate-200 px-4 py-2 flex justify-around items-center z-30">
         <button
