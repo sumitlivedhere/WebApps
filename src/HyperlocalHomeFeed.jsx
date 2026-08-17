@@ -16,6 +16,14 @@ import AdvertisingHub from './categories/AdvertisingHub';
 import AdvertisingFeed from './components/AdvertisingFeed';
 import EducationHub from './categories/EducationHub';
 import EducationFeed from './components/EducationFeed';
+import ConstructionHub from './categories/ConstructionHub';
+import ConstructionFeed from './components/ConstructionFeed';
+import MallsHub from './categories/MallsHub';
+import MallsFeed from './components/MallsFeed';
+import RestaurantsHub from './categories/RestaurantsHub';
+import RestaurantsFeed from './components/RestaurantsFeed';
+import WhiteCollarHub from './categories/WhiteCollarHub';
+import WhiteCollarFeed from './components/WhiteCollarFeed';
 import KaarigarHub from './categories/KaarigarHub';
 import CommunityHub from './categories/CommunityHub';
 import CommunityFeed from './components/CommunityFeed';
@@ -30,6 +38,10 @@ import { initialKaarigarWorkers } from './data/kaarigarData';
 import { initialMarketProducts, marketCategories } from './data/marketData';
 import { initialAdvertisingProviders } from './data/advertisingData';
 import { initialEducationListings } from './data/educationData';
+import { initialConstructionListings } from './data/constructionData';
+import { initialMallsStores } from './data/mallsData';
+import { initialRestaurantsList } from './data/restaurantsData';
+import { initialWhiteCollarListings } from './data/whiteCollarData';
 import { initialListings } from './data/mockData';
 import { initialCommunityDrives } from './data/communityData';
 
@@ -57,7 +69,14 @@ export default function HyperlocalHomeFeed() {
   const [educationListings, setEducationListings] = useState(initialEducationListings);
   const [educationExamTitle, setEducationExamTitle] = useState('');
   const [educationFormatFilter, setEducationFormatFilter] = useState('all');
-
+  const [constructionListings, setConstructionListings] = useState(initialConstructionListings);
+  const [constructionSectorTitle, setConstructionSectorTitle] = useState('');
+  const [mallsStores, setMallsStores] = useState(initialMallsStores);
+  const [mallsCategoryTitle, setMallsCategoryTitle] = useState('');
+  const [restaurantsList, setRestaurantsList] = useState(initialRestaurantsList);
+  const [restaurantCategoryTitle, setRestaurantCategoryTitle] = useState('');
+  const [whiteCollarListings, setWhiteCollarListings] = useState(initialWhiteCollarListings);
+  const [whiteCollarCategoryTitle, setWhiteCollarCategoryTitle] = useState('');
   const [notifications, setNotifications] = useState([
     {
       id: 1,
@@ -156,6 +175,18 @@ export default function HyperlocalHomeFeed() {
       case 'education-hub':
       case 'education-feed':
         return 'Education (कोचिंग व ट्यूशन)';
+      case 'construction-hub':
+      case 'construction-feed':
+        return 'Construction (निर्माण कार्य)';
+      case 'malls-hub':
+      case 'malls-feed':
+        return 'Malls & Boutiques (मॉल और बाजार)';
+      case 'restaurants-hub':
+      case 'restaurants-feed':
+        return 'Restaurants & Cafes (रेस्टोरेंट और कैफे)';
+      case 'white-collar-hub':
+      case 'white-collar-feed':
+        return 'Consultants & Experts (वाइट कॉलर सेवाएँ)';
 
       default:
         return 'Town Hub';
@@ -179,6 +210,10 @@ export default function HyperlocalHomeFeed() {
     if (['shaadi', 'shadi', 'wedding', 'matrimony', 'marriage', 'vivah', 'pre-wedding', 'wedding-event'].includes(id)) return 'shaadi-hub';
     if (['advertising', 'ad', 'ads', 'adv', 'advertisement', 'marketing', 'prachar', 'branding', 'hoardings', 'pamphlet', 'pamphlets', 'promotion', 'promotions'].includes(id)) return 'advertising-hub';
     if (['education', 'coaching', 'tuition', 'tuitions', 'teaching', 'tutor', 'tutors', 'exams', 'study', 'classes'].includes(id)) return 'education-hub';
+    if (['construction', 'nirman', 'builder', 'builders', 'thekedaar', 'thekedar', 'cement', 'architect', 'jcb'].includes(id)) return 'construction-hub';
+    if (['malls', 'shopping', 'mall', 'boutique', 'boutiques', 'showroom', 'showrooms', 'outlets', 'fashion-mall'].includes(id)) return 'malls-hub';
+    if (['restaurants', 'restaurant', 'cafe', 'cafes', 'food', 'dining', 'dhaba', 'bakery', 'bhojnalya'].includes(id)) return 'restaurants-hub';
+    if (['white-collar', 'whitecollar', 'ca', 'lawyer', 'doctor', 'professional', 'professionals', 'consultant', 'consultants', 'advocate', 'ayurveda', 'trainer'].includes(id)) return 'white-collar-hub';
 
     return 'category-hub';
   };
@@ -541,6 +576,98 @@ export default function HyperlocalHomeFeed() {
           selectedExamId={selectedSubCategory}
           examTitle={educationExamTitle}
           initialFormatFilter={educationFormatFilter}
+          selectedCity={selectedCity}
+          searchQuery={searchQuery}
+          onBack={goBack}
+        />
+      )}
+
+      {/* DEDICATED CONSTRUCTION HUB (6 PHASES & SECTORS) */}
+      {userMode === 'buyer' && currentScreen === 'construction-hub' && (
+        <ConstructionHub
+          onSelectSector={(sectorId, sectorName) => {
+            setConstructionSectorTitle(sectorName);
+            navigateForward({ screen: 'construction-feed', subCategory: sectorId });
+          }}
+          onBack={goBack}
+        />
+      )}
+
+      {/* CONSTRUCTION FEED (THEKEDARS, MATERIALS, JCB, ARCHITECTS) */}
+      {userMode === 'buyer' && currentScreen === 'construction-feed' && (
+        <ConstructionFeed
+          listings={constructionListings}
+          selectedSectorId={selectedSubCategory}
+          sectorTitle={constructionSectorTitle}
+          selectedCity={selectedCity}
+          searchQuery={searchQuery}
+          onBack={goBack}
+        />
+      )}
+
+      {/* DEDICATED MALLS & BOUTIQUES HUB (7 MODERN RETAIL SECTORS) */}
+      {userMode === 'buyer' && currentScreen === 'malls-hub' && (
+        <MallsHub
+          onSelectCategory={(catId, catName) => {
+            setMallsCategoryTitle(catName);
+            navigateForward({ screen: 'malls-feed', subCategory: catId });
+          }}
+          onBack={goBack}
+        />
+      )}
+
+      {/* MALLS FEED (STOREFRONTS, AMENITIES, PRICE BANDS & CATALOGUE SHOWCASE) */}
+      {userMode === 'buyer' && currentScreen === 'malls-feed' && (
+        <MallsFeed
+          stores={mallsStores}
+          selectedCategoryId={selectedSubCategory}
+          categoryTitle={mallsCategoryTitle}
+          selectedCity={selectedCity}
+          searchQuery={searchQuery}
+          onBack={goBack}
+        />
+      )}
+
+      {/* DEDICATED RESTAURANTS & CAFES HUB (6 DINING SECTORS) */}
+      {userMode === 'buyer' && currentScreen === 'restaurants-hub' && (
+        <RestaurantsHub
+          onSelectCategory={(catId, catName) => {
+            setRestaurantCategoryTitle(catName);
+            navigateForward({ screen: 'restaurants-feed', subCategory: catId });
+          }}
+          onBack={goBack}
+        />
+      )}
+
+      {/* RESTAURANTS FEED (AMBIANCE, MUST-TRY DISHES, PRICE FOR TWO & TABLE BOOKING) */}
+      {userMode === 'buyer' && currentScreen === 'restaurants-feed' && (
+        <RestaurantsFeed
+          restaurants={restaurantsList}
+          selectedCategoryId={selectedSubCategory}
+          categoryTitle={restaurantCategoryTitle}
+          selectedCity={selectedCity}
+          searchQuery={searchQuery}
+          onBack={goBack}
+        />
+      )}
+
+      {/* DEDICATED WHITE COLLAR HUB (9 PROFESSIONAL SECTORS) */}
+      {userMode === 'buyer' && currentScreen === 'white-collar-hub' && (
+        <WhiteCollarHub
+          onSelectCategory={(catId, catName) => {
+            setWhiteCollarCategoryTitle(catName);
+            navigateForward({ screen: 'white-collar-feed', subCategory: catId });
+          }}
+          onBack={goBack}
+        />
+      )}
+
+      {/* WHITE COLLAR FEED (QUALIFICATIONS, REGISTRATIONS, FEES & CREDENTIAL SHOWCASE) */}
+      {userMode === 'buyer' && currentScreen === 'white-collar-feed' && (
+        <WhiteCollarFeed
+          listings={whiteCollarListings}
+          selectedCategoryId={selectedSubCategory}
+          categoryTitle={whiteCollarCategoryTitle}
           selectedCity={selectedCity}
           searchQuery={searchQuery}
           onBack={goBack}

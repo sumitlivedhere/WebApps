@@ -21,9 +21,25 @@ export default function TownHubView({ onSelectCategory }) {
   desc: 'SSC, Bank, NEET, JEE, School Boards, 1-on-1 Home Tutors & Micro Batches',
   icon: '🎓',
   accent: 'from-blue-500/10 to-cyan-500/20 text-blue-700'
-},    { id: 'malls', name: 'Malls & Shopping (मॉल और बाजार)', desc: 'Clothing Outlets, Multiplexes, Brands & Supermarkets', icon: '🛍️', accent: 'from-pink-600/10 to-rose-500/20 text-pink-700' },
-    { id: 'restaurants', name: 'Restaurants & Cafes (रेस्टोरेंट और कैफे)', desc: 'Dine-in, Food Delivery, Street Food & Cafes', icon: '🍔', accent: 'from-orange-500/10 to-red-500/20 text-orange-600' },
-    { id: 'white-collar', name: 'White Collar Services (वाइट कॉलर सेवाएँ)', desc: 'CAs, Lawyers, Financial Consultants & IT Experts', icon: '👔', accent: 'from-slate-600/10 to-zinc-500/20 text-slate-800' },
+},
+
+{
+  id: 'restaurants',
+  name: 'Restaurants & Cafes (रेस्टोरेंट और कैफे)',
+  desc: 'Dine-in, Aesthetic work cafes, rooftop lounges, pure veg thalis & family garden dhabas',
+  icon: '🍔',
+  accent: 'from-orange-500/10 to-red-500/20 text-orange-600'
+},
+
+    { id: 'malls', name: 'Malls & Shopping (मॉल और बाजार)', desc: 'Clothing Outlets, Multiplexes, Brands & Supermarkets', icon: '🛍️', accent: 'from-pink-600/10 to-rose-500/20 text-pink-700' },
+
+{
+  id: 'white-collar',
+  name: 'White Collar Services (वाइट कॉलर सेवाएँ)',
+  desc: 'CAs, Lawyers, Doctors, Vaidyas, Financial Advisors, Architects & Fitness Trainers',
+  icon: '👔',
+  accent: 'from-slate-600/10 to-zinc-500/20 text-slate-800'
+},
     { id: 'creative', name: 'Creative Professionals (क्रिएटिव प्रोफेशनल्स)', desc: 'Photographers, Videographers, Designers & Event Planners', icon: '📸', accent: 'from-purple-600/10 to-pink-500/20 text-purple-700' },
     { id: 'advertising', name: 'Advertising & Marketing (विज्ञापन व प्रचार)', desc: 'App promotions, newspaper ads, pamphlets, hoardings, flex & signboards', icon: '📢',accent: 'from-amber-500/10 to-orange-500/20 text-amber-700'}
   ];
