@@ -4,10 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-  "dev": "vite",
-  "pwa:dev": "vite & npx open-cli http://localhost:5173 --app=\"Google Chrome\""
-}
-,
+    "dev": "vite",
+    "pwa:dev": "vite & npx open-cli http://localhost:5173 --app=\"Google Chrome\""
+  },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",
     "react": "^19.2.8",
@@ -22,6 +21,7 @@
     "oxlint": "^1.75.0",
     "postcss": "^8.5.26",
     "tailwindcss": "^4.3.3",
-    "vite": "^8.2.0"
+    "vite": "^8.2.0",
+    "vite-plugin-pwa": "^1.3.0"
   }
 }

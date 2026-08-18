@@ -10,10 +10,10 @@ export default function TownHubView({ onSelectCategory }) {
     { id: 'transporters', name: 'Transporters (ट्रांसपोर्ट)', desc: 'Goods Pickups, Packers & Tempo Services', icon: '🚚', accent: 'from-purple-500/10 to-violet-500/20 text-purple-600' },
     { id: 'wholesellers', name: 'Wholesellers (थोक व्यापारी)', desc: 'Bulk Supplies, Mandi & B2B Dealers', icon: '📦', accent: 'from-rose-500/10 to-pink-500/20 text-rose-600' },
     { id: 'jobs', name: 'Local Jobs (नौकरी)', desc: 'Sales, Shop Staff, Drivers & Office Work', icon: '💼', accent: 'from-cyan-500/10 to-blue-500/20 text-cyan-600' },
-    { id: 'news', name: 'Local News (खबर)', desc: 'Town Updates, Events & Weather Alerts', icon: '📰', accent: 'from-slate-500/10 to-zinc-500/20 text-slate-700' },
+    //{ id: 'news', name: 'Local News (खबर)', desc: 'Town Updates, Events & Weather Alerts', icon: '📰', accent: 'from-slate-500/10 to-zinc-500/20 text-slate-700' },
     { id: 'community', name: 'Community Service (जनहित)', desc: 'Blood Donation, NGO & Helplines', icon: '🤝', accent: 'from-red-500/10 to-orange-500/20 text-red-600' },
     { id: 'healthcare', name: 'Healthcare / Medical (स्वास्थ्य सेवाएँ)', desc: 'Emergency Doctors, Chemists, Blood Banks & Labs', icon: '🏥', accent: 'from-emerald-500/10 to-teal-500/20 text-emerald-600' },
-    { id: 'festival', name: 'Festival / Utsav (त्योहार / उत्सव)', desc: 'Local Mela, Pandal, Garba, Events & Pujas', icon: '🎉', accent: 'from-violet-500/10 to-purple-500/20 text-purple-600' },
+    //{ id: 'festival', name: 'Festival / Utsav (त्योहार / उत्सव)', desc: 'Local Mela, Pandal, Garba, Events & Pujas', icon: '🎉', accent: 'from-violet-500/10 to-purple-500/20 text-purple-600' },
     { id: 'construction', name: 'Construction (निर्माण कार्य)', desc: 'Builders, Masons, Architects & Building Material', icon: '🏗️', accent: 'from-amber-600/10 to-yellow-500/20 text-amber-700' },
 {
   id: 'education',
@@ -40,7 +40,7 @@ export default function TownHubView({ onSelectCategory }) {
   icon: '👔',
   accent: 'from-slate-600/10 to-zinc-500/20 text-slate-800'
 },
-    { id: 'creative', name: 'Creative Professionals (क्रिएटिव प्रोफेशनल्स)', desc: 'Photographers, Videographers, Designers & Event Planners', icon: '📸', accent: 'from-purple-600/10 to-pink-500/20 text-purple-700' },
+   // { id: 'creative', name: 'Creative Professionals (क्रिएटिव प्रोफेशनल्स)', desc: 'Photographers, Videographers, Designers & Event Planners', icon: '📸', accent: 'from-purple-600/10 to-pink-500/20 text-purple-700' },
     { id: 'advertising', name: 'Advertising & Marketing (विज्ञापन व प्रचार)', desc: 'App promotions, newspaper ads, pamphlets, hoardings, flex & signboards', icon: '📢',accent: 'from-amber-500/10 to-orange-500/20 text-amber-700'}
   ];
 

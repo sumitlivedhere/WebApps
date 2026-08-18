@@ -65,100 +65,91 @@ export default function ListingsFeed({
     'house-large', 'house-1floor', 'house-2floor'
   ].includes(selectedSubCategory);
 
-  const filteredListings = listings
- .filter((item) => {
-      if (selectedSubCategory !== 'all') {
-        if (isFashionType && (item.subCategory === selectedSubCategory || selectedSubCategory === 'clothes')) return true;
-        if (isElectronicsType && (item.subCategory === selectedSubCategory || selectedSubCategory === 'electronics')) return true;
-        if (isFurnitureType && (item.subCategory === selectedSubCategory || selectedSubCategory === 'furniture')) return true;
-        if (isVehicleType && (item.subCategory === selectedSubCategory || selectedSubCategory === 'vehicle')) return true;
-        if (isPropertyType && (item.subCategory === 'property' || selectedSubCategory === 'property')) return true;
-        return item.subCategory === selectedSubCategory;
-      }
-      return true;
-    })
-    .filter((item) => {
-      // Fashion Size Filter
-      if (isFashionType && selectedFashionSize !== 'all') {
-        return item.size === selectedFashionSize;
-      }
-      return true;
-    })
-    .filter((item) => {
-      // Fashion Condition Filter
-      if (isFashionType && selectedFashionCondition !== 'all') {
-        return item.condition === selectedFashionCondition;
-      }
-      return true;
-    })
+ const filteredListings = useMemo(() => {
+const q = searchQuery ? searchQuery.toLowerCase() : '';
 
-    .filter((item) => {
-      // Electronics Brand Filter
-      if (isElectronicsType && selectedElectronicsBrand !== 'all') {
-        return item.brand === selectedElectronicsBrand;
-      }
-      return true;
-    })
-    .filter((item) => {
-      // Electronics Warranty / Condition Filter
-      if (isElectronicsType && selectedWarranty !== 'all') {
-        return item.condition === selectedWarranty;
-      }
-      return true;
-    })
+const result = [];
+for (let i = 0; i < listings.length; i++) {
+  const item = listings[i];
 
-    .filter((item) => {
-      // Furniture Material Filter
-      if (isFurnitureType && selectedMaterial !== 'all') {
-        return item.material === selectedMaterial;
-      }
-      return true;
-    })
-    .filter((item) => {
-      // Furniture Condition Filter
-      if (isFurnitureType && selectedCondition !== 'all') {
-        return item.condition === selectedCondition;
-      }
-      return true;
-    })
+  // 1. Subcategory Check
+  if (selectedSubCategory !== 'all') {
+    const matchesCategory =
+      (isFashionType && (item.subCategory === selectedSubCategory || selectedSubCategory === 'clothes')) ||
+      (isElectronicsType && (item.subCategory === selectedSubCategory || selectedSubCategory === 'electronics')) ||
+      (isFurnitureType && (item.subCategory === selectedSubCategory || selectedSubCategory === 'furniture')) ||
+      (isVehicleType && (item.subCategory === selectedSubCategory || selectedSubCategory === 'vehicle')) ||
+      (isPropertyType && (item.subCategory === 'property' || selectedSubCategory === 'property')) ||
+      item.subCategory === selectedSubCategory;
 
-    .filter((item) => {
-      // Vehicle Brand Filter
-      if (isVehicleType && selectedBrand !== 'all') {
-        return item.brand === selectedBrand;
-      }
-      return true;
-    })
-    .filter((item) => {
-      // Vehicle Age Filter
-      if (isVehicleType && selectedAge !== 'all' && item.ageYears) {
-        if (selectedAge === 'under-2') return item.ageYears <= 2;
-        if (selectedAge === '2-5') return item.ageYears > 2 && item.ageYears <= 5;
-        if (selectedAge === 'above-5') return item.ageYears > 5;
-      }
-      return true;
-    })
-    .filter((item) => {
-      // Property Price Range Filter
-      if (isPropertyType && selectedPriceRange !== 'all') {
-        if (selectedPriceRange === 'under-25l') return item.rawPrice < 2500000;
-        if (selectedPriceRange === '25l-50l') return item.rawPrice >= 2500000 && item.rawPrice <= 5000000;
-        if (selectedPriceRange === '50l-1cr') return item.rawPrice > 5000000 && item.rawPrice <= 10000000;
-        if (selectedPriceRange === 'above-1cr') return item.rawPrice > 10000000;
-      }
-      return true;
-    })
-    .filter((item) =>
-      searchQuery === '' ||
-      item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.category.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (item.location && item.location.toLowerCase().includes(searchQuery.toLowerCase()))
-    )
-    .sort((a, b) => {
-      if (selectedSort === 'low-to-high') return (a.rawPrice || 0) - (b.rawPrice || 0);
-      if (selectedSort === 'high-to-low') return (b.rawPrice || 0) - (a.rawPrice || 0);
-      return 0;
-    });
+    if (!matchesCategory) continue;
+  }
+
+  // 2. Specific Segment Filters
+  if (isFashionType) {
+    if (selectedFashionSize !== 'all' && item.size !== selectedFashionSize) continue;
+    if (selectedFashionCondition !== 'all' && item.condition !== selectedFashionCondition) continue;
+  } else if (isElectronicsType) {
+    if (selectedElectronicsBrand !== 'all' && item.brand !== selectedElectronicsBrand) continue;
+    if (selectedWarranty !== 'all' && item.condition !== selectedWarranty) continue;
+  } else if (isFurnitureType) {
+    if (selectedMaterial !== 'all' && item.material !== selectedMaterial) continue;
+    if (selectedCondition !== 'all' && item.condition !== selectedCondition) continue;
+  } else if (isVehicleType) {
+    if (selectedBrand !== 'all' && item.brand !== selectedBrand) continue;
+    if (selectedAge !== 'all' && item.ageYears) {
+      if (selectedAge === 'under-2' && item.ageYears > 2) continue;
+      if (selectedAge === '2-5' && (item.ageYears <= 2 || item.ageYears > 5)) continue;
+      if (selectedAge === 'above-5' && item.ageYears <= 5) continue;
+    }
+  } else if (isPropertyType && selectedPriceRange !== 'all') {
+    const p = item.rawPrice || 0;
+    if (selectedPriceRange === 'under-25l' && p >= 2500000) continue;
+    if (selectedPriceRange === '25l-50l' && (p < 2500000 || p > 5000000)) continue;
+    if (selectedPriceRange === '50l-1cr' && (p <= 5000000 || p > 10000000)) continue;
+    if (selectedPriceRange === 'above-1cr' && p <= 10000000) continue;
+  }
+
+  // 3. Search Term Check
+  if (q) {
+    const matchesSearch =
+      (item.title && item.title.toLowerCase().includes(q)) ||
+      (item.category && item.category.toLowerCase().includes(q)) ||
+      (item.location && item.location.toLowerCase().includes(q));
+    if (!matchesSearch) continue;
+  }
+
+  result.push(item);
+}
+
+// 4. Sort (Executed only on the pre-filtered items)
+if (selectedSort === 'low-to-high') {
+  result.sort((a, b) => (a.rawPrice || 0) - (b.rawPrice || 0));
+} else if (selectedSort === 'high-to-low') {
+  result.sort((a, b) => (b.rawPrice || 0) - (a.rawPrice || 0));
+}
+
+return result;
+}, [
+listings,
+selectedSubCategory,
+selectedFashionSize,
+selectedFashionCondition,
+selectedElectronicsBrand,
+selectedWarranty,
+selectedMaterial,
+selectedCondition,
+selectedBrand,
+selectedAge,
+selectedPriceRange,
+searchQuery,
+selectedSort,
+isFashionType,
+isElectronicsType,
+isFurnitureType,
+isVehicleType,
+isPropertyType,
+]);
 
   return (
     <main className="p-3.5 space-y-3.5 relative z-10 animate-fade-in">
