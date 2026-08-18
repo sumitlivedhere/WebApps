@@ -1,1 +1,39 @@
 @import "tailwindcss";
+@keyframes wiggle-subtle {
+  0%, 100% {
+    transform: rotate(0deg) scale(1);
+  }
+  15% {
+    transform: rotate(-0.7deg) scale(1.008);
+  }
+  30% {
+    transform: rotate(0.7deg) scale(1.008);
+  }
+  45% {
+    transform: rotate(-0.3deg) scale(1);
+  }
+  60% {
+    transform: rotate(0.3deg) scale(1);
+  }
+  75% {
+    transform: rotate(0deg) scale(1);
+  }
+}
+
+.animate-wiggle-subtle {
+  animation: wiggle-subtle 4.5s ease-in-out infinite;
+}
+
+@keyframes bell-ring {
+  0%, 100% { transform: rotate(0deg); }
+  10%, 30% { transform: rotate(14deg); }
+  20%, 40% { transform: rotate(-14deg); }
+  50% { transform: rotate(8deg); }
+  60% { transform: rotate(-8deg); }
+  70% { transform: rotate(0deg); }
+}
+
+.animate-bell-ring {
+  animation: bell-ring 3.5s ease-in-out infinite;
+  transform-origin: top center;
+}
