@@ -5,44 +5,60 @@ import { compressImage } from '../utils/imageCompressor';
  * 1. Compress & Upload Multiple Images Concurrently
  */
 export async function uploadMultipleListingImages(files, primaryIndex = 0) {
-  if (!files || files.length === 0) return { coverUrl: null, allUrls: [] };
+  const fallbackImg = 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=700';
+
+  if (!files || files.length === 0) {
+    return { coverUrl: fallbackImg, allUrls: [fallbackImg] };
+  }
 
   try {
     const uploadPromises = Array.from(files).map(async (file, idx) => {
-      // Compress client-side
-      const compressedBlob = await compressImage(file, { maxWidth: 1080, quality: 0.78, format: 'image/webp' });
-      const fileName = `${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 7)}.webp`;
-      const filePath = `listings/${fileName}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from('listing-images')
-        .upload(filePath, compressedBlob, {
-          contentType: 'image/webp',
-          upsert: true,
+      try {
+        const compressedBlob = await compressImage(file, {
+          maxWidth: 1080,
+          quality: 0.78,
+          format: 'image/webp',
         });
+        const fileName = `${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 7)}.webp`;
+        const filePath = `listings/${fileName}`;
 
-      if (uploadError) {
-        console.error(`Upload error on photo ${idx}:`, uploadError);
+        const { error: uploadError } = await supabase.storage
+          .from('listing-images')
+          .upload(filePath, compressedBlob, {
+            contentType: 'image/webp',
+            upsert: true,
+          });
+
+        if (uploadError) {
+          console.error(`Upload error on photo ${idx}:`, uploadError);
+          return null;
+        }
+
+        const { data } = supabase.storage
+          .from('listing-images')
+          .getPublicUrl(filePath);
+
+        return data?.publicUrl || null;
+      } catch (err) {
+        console.error(`Failed to process photo ${idx}:`, err);
         return null;
       }
-
-      const { data } = supabase.storage
-        .from('listing-images')
-        .getPublicUrl(filePath);
-
-      return data.publicUrl;
     });
 
     const results = await Promise.all(uploadPromises);
     const validUrls = results.filter(Boolean);
 
+    if (validUrls.length === 0) {
+      return { coverUrl: fallbackImg, allUrls: [fallbackImg] };
+    }
+
     return {
-      coverUrl: validUrls[primaryIndex] || validUrls[0] || null,
+      coverUrl: validUrls[primaryIndex] || validUrls[0],
       allUrls: validUrls,
     };
   } catch (err) {
     console.error('Multi-image upload pipeline failed:', err);
-    return { coverUrl: null, allUrls: [] };
+    return { coverUrl: fallbackImg, allUrls: [fallbackImg] };
   }
 }
 

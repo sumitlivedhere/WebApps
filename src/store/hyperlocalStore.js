@@ -14,9 +14,6 @@ import { initialCommunityDrives } from '../data/communityData';
 import { initialReCommerceListings } from '../data/reCommerceData';
 import { supabase } from '../services/supabaseClient';
 
-/**
- * Universal Normalizer: Transforms Supabase DB rows into frontend card schema
- */
 export function normalizeDBListing(item) {
   const coverImage =
     item.image_url ||
@@ -33,22 +30,22 @@ export function normalizeDBListing(item) {
     title: item.title || item.name || 'Untitled Listing',
     name: item.title || item.name || 'Untitled Listing',
     category: item.category || 'general',
-    subCategory: item.sub_category || 'all',
+    subCategory: item.sub_category || item.subCategory || 'all',
     price: item.price || 'Contact for Price',
     fee: item.price || 'Contact for Price',
     rates: item.price || 'Contact for Price',
     visitingCharge: item.price || 'Contact for Price',
     description: item.description || '',
-    sellerName: item.seller_name || 'Verified Member',
+    sellerName: item.seller_name || item.sellerName || 'Verified Member',
     phone: item.phone || '9876543210',
     whatsapp: item.whatsapp || item.phone || '9876543210',
     location: item.location_name || item.location || 'Alwar',
-    landmark: item.location_name || 'Main Road',
+    landmark: item.landmark || item.location_name || 'Main Road',
     distance: item.distance || '0.1 km away',
     image: coverImage,
     images: allImages,
     condition: item.condition || 'Good',
-    interestCount: item.interest_count || 0,
+    interestCount: item.interest_count || item.interestCount || 0,
     rating: item.rating || 5.0,
     verified: item.verified !== undefined ? item.verified : true,
     badge: '🟢 Verified Listing',
@@ -79,6 +76,16 @@ class HyperlocalEngineStore {
       reCommerceListings: initialReCommerceListings,
       threads: {},
       interests: {},
+      notifications: [
+        {
+          id: 1,
+          tag: 'TOWN UPDATE',
+          title: 'Hyperlocal Network Live',
+          message: 'Welcome to your connected city platform.',
+          time: 'Just now',
+          read: false,
+        },
+      ],
     };
     this.listeners = new Set();
   }
@@ -91,7 +98,6 @@ class HyperlocalEngineStore {
     const targetBucket = this.state[bucketKey] ? bucketKey : 'listings';
     const currentList = this.state[targetBucket] || [];
 
-    // Deduplicate: replace if already exists by ID, otherwise prepend
     const existsIdx = currentList.findIndex(
       (existing) => String(existing.id) === String(item.id)
     );
@@ -104,6 +110,19 @@ class HyperlocalEngineStore {
     }
 
     this.notify(targetBucket);
+  }
+
+  addNotification(notif) {
+    const newEntry = {
+      id: Date.now(),
+      tag: notif.tag || 'ALERT',
+      title: notif.title || 'Notification',
+      message: notif.message || '',
+      time: notif.time || 'Just now',
+      read: false,
+    };
+    this.state.notifications = [newEntry, ...(this.state.notifications || [])];
+    this.notify('notifications');
   }
 
   // O(1) Discussion Thread Operations
@@ -133,7 +152,7 @@ class HyperlocalEngineStore {
     this.notify(`thread:${listingId}`);
   }
 
-  // O(1) Fast Interest Counter
+  // O(1) Fast Interest Counter Operations
   getInterestCount(listingId, defaultCount = 0) {
     return this.state.interests[listingId] !== undefined
       ? this.state.interests[listingId]
@@ -160,7 +179,7 @@ class HyperlocalEngineStore {
 export const hyperlocalStore = new HyperlocalEngineStore();
 
 /**
- * Hydrates store slices with active listings from Supabase on app start
+ * Hydrates store slices with active listings from Supabase
  */
 export async function hydrateFromDB() {
   try {
@@ -184,7 +203,7 @@ export async function hydrateFromDB() {
       console.log(`✅ Loaded ${data.length} live listings from Supabase.`);
     }
   } catch (err) {
-    console.error('Hydration failed:', err);
+    console.error('Hydration error:', err);
   }
 }
 
@@ -237,6 +256,21 @@ export function useInterestSlice(listingId, defaultCount = 0) {
   return count;
 }
 
+// Slice hook for user notifications
+export function useNotificationSlice() {
+  const [notifs, setNotifs] = useState(() => hyperlocalStore.getState('notifications'));
+
+  useEffect(() => {
+    return hyperlocalStore.subscribe((newState, changedKey) => {
+      if (!changedKey || changedKey === 'notifications') {
+        setNotifs([...(newState.notifications || [])]);
+      }
+    });
+  }, []);
+
+  return notifs;
+}
+
 // Real-time WebSocket singleton
 let realtimeChannel = null;
 
@@ -252,6 +286,13 @@ export function initRealtimeSubscriptions() {
         const item = payload.new;
         const normalized = normalizeDBListing(item);
         hyperlocalStore.insertListing(item.bucket_key || 'listings', normalized);
+
+        hyperlocalStore.addNotification({
+          tag: 'NEW LISTING',
+          title: `New in ${normalized.category.toUpperCase()}`,
+          message: `"${normalized.title}" was just listed in ${normalized.location}.`,
+          time: 'Just now',
+        });
       }
     )
     .on(
@@ -279,9 +320,5 @@ export function initRealtimeSubscriptions() {
         }
       }
     )
-    .subscribe((status) => {
-      if (status === 'SUBSCRIBED') {
-        console.log('⚡ Realtime WebSockets Active: Listening for live listings & threads');
-      }
-    });
+    .subscribe();
 }
