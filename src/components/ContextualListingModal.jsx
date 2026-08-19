@@ -1,14 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { compressImage } from '../utils/imageCompressor';
 import { cityZones } from '../data/cityZones';
+import { uploadMultipleListingImages, insertListingToDB } from '../services/listingService';
+import { hyperlocalStore, normalizeDBListing } from '../store/hyperlocalStore';
 
 // Universal Trade/Sector Catalog for Homepage selection
 const ALL_TOWN_CATEGORIES = [
-  { id: 'kaarigar', name: 'Kaarigar (कारीगर व मिस्त्री)', icon: '🛠️', bucket: 'kaarigarWorkers' },
+  { id: 'property', name: 'Property / Flats / Plots (प्रॉपर्टी)', icon: '🏢', bucket: 'listings' },
   { id: 'recommerce', name: 'Re-commerce (पुराना सामान बेचें)', icon: '🛍️', bucket: 'reCommerceListings' },
+  { id: 'kaarigar', name: 'Kaarigar (कारीगर व मिस्त्री)', icon: '🛠️', bucket: 'kaarigarWorkers' },
   { id: 'white-collar', name: 'Doctor / CA / Lawyer / Consultant (प्रोफेशनल्स)', icon: '👔', bucket: 'whiteCollarListings' },
   { id: 'restaurants', name: 'Restaurant / Cafe / Food (रेस्टोरेंट व कैफे)', icon: '🍔', bucket: 'restaurantsList' },
   { id: 'malls', name: 'Showroom / Boutique / Shop (दुकान व शोरूम)', icon: '👗', bucket: 'mallsStores' },
+  { id: 'market', name: 'Market / Retail Products (बाज़ार उत्पाद)', icon: '🛒', bucket: 'marketProducts' },
   { id: 'education', name: 'Coaching / Home Tuition (ट्यूशन व कोचिंग)', icon: '🎓', bucket: 'educationListings' },
   { id: 'construction', name: 'Thekedar / Material / JCB (निर्माण कार्य)', icon: '🏗️', bucket: 'constructionListings' },
   { id: 'shaadi', name: 'Wedding Vendor / Halwai / Tent (विवाह सेवा)', icon: '💍', bucket: 'shaadiVendors' },
@@ -21,27 +24,28 @@ export default function ContextualListingModal({
   currentScreen,
   selectedCategory,
   selectedSubCategory,
-  selectedCity,
+  selectedCity = 'Alwar',
   onClose,
   onAddListing,
 }) {
-  const [activeTab, setActiveTab] = useState('voice'); // 'voice' | 'write'
+  const [activeTab, setActiveTab] = useState('write'); // 'write' | 'voice'
 
   // Determine Auto-Locked Category
   const getInitialTargetSector = () => {
+    if (['property-hub', 'listings'].includes(currentScreen)) return 'property';
     if (['white-collar-hub', 'white-collar-feed'].includes(currentScreen)) return 'white-collar';
     if (['kaarigar-hub', 'kaarigar-feed'].includes(currentScreen)) return 'kaarigar';
     if (['education-hub', 'education-feed'].includes(currentScreen)) return 'education';
     if (['restaurants-hub', 'restaurants-feed'].includes(currentScreen)) return 'restaurants';
     if (['malls-hub', 'malls-feed'].includes(currentScreen)) return 'malls';
-    if (['market-hub', 'market-feed'].includes(currentScreen)) return 'malls';
+    if (['market-hub', 'market-feed'].includes(currentScreen)) return 'market';
     if (['shaadi-hub', 'shaadi-feed'].includes(currentScreen)) return 'shaadi';
     if (['construction-hub', 'construction-feed'].includes(currentScreen)) return 'construction';
     if (['advertising-hub', 'advertising-feed'].includes(currentScreen)) return 'advertising';
     if (['community-hub', 'community-feed'].includes(currentScreen)) return 'community';
     if (['transporter-hub', 'transporter-feed'].includes(currentScreen)) return 'transporters';
     if (['recommerce-feed', 'recommerce-hub', 'buysell-hub'].includes(currentScreen)) return 'recommerce';
-    return 'kaarigar'; // default fallback if opened from homepage
+    return selectedCategory || 'property';
   };
 
   const [targetSector, setTargetSector] = useState(getInitialTargetSector);
@@ -52,38 +56,37 @@ export default function ContextualListingModal({
     name: '',
     phone: '',
     whatsapp: '',
-    location: cityZones && cityZones.length > 0 ? cityZones[0].name : 'Hope Circus, Alwar',
-    landmark: '',
+    location: cityZones && cityZones.length > 0 ? cityZones[0].name : selectedCity,
     feeOrPrice: '',
     specialties: '',
-    qualifications: '',
-    regNumber: '',
-    experience: 'Experienced (अनुभवी)',
-    images: [],
+    description: '',
   });
 
-  const [isCompressing, setIsCompressing] = useState(false);
+  // Multiple Image States
+  const [rawFiles, setRawFiles] = useState([]);
+  const [imagePreviews, setImagePreviews] = useState([]);
+  const [primaryCoverIndex, setPrimaryCoverIndex] = useState(0);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Voice state machine
   const [voiceStep, setVoiceStep] = useState(0);
   const [isListening, setIsListening] = useState(false);
-  const [voiceTranscript, setVoiceTranscript] = useState('');
   const recognitionRef = useRef(null);
 
   const voiceStepsConfig = [
     {
       id: 'name',
       title: 'Aapka Shubh Naam Batayein',
-      hindiSub: 'अपना नाम या दुकान/क्लिनिक/फर्म का नाम बोलें',
+      hindiSub: 'अपना नाम या दुकान/प्रॉपर्टी/फर्म का नाम बोलें',
       icon: '👤',
       field: 'name',
-      placeholder: 'उदा. "डॉ. विवेक शर्मा" या "राजू इलेक्ट्रिशियन"',
-      speechPrompt: 'कृपया अपना नाम या अपनी दुकान का नाम बोलें',
+      placeholder: 'उदा. "2 BHK Flat Budh Vihar" या "राजू इलेक्ट्रीशियन"',
+      speechPrompt: 'कृपया अपना नाम या प्रॉपर्टी का टाइटल बोलें',
     },
     {
       id: 'phone',
       title: 'Aapka Contact Number',
-      hindiSub: 'ग्राहक आपको किस नंबर पर कॉल या व्हाट्सएप करें?',
+      hindiSub: 'ग्राहक आपको किस नंबर पर कॉल करें?',
       icon: '📞',
       field: 'phone',
       placeholder: 'उदा. "9876543210"',
@@ -92,7 +95,7 @@ export default function ContextualListingModal({
     {
       id: 'location',
       title: 'Aapka Area / Colony',
-      hindiSub: 'आपकी दुकान या सर्विस किस इलाके में स्थित है?',
+      hindiSub: 'प्रॉपर्टी या दुकान किस इलाके में स्थित है?',
       icon: '📍',
       field: 'location',
       placeholder: 'उदा. "बुध विहार" या "स्टेशन रोड"',
@@ -100,30 +103,30 @@ export default function ContextualListingModal({
     },
     {
       id: 'feeOrPrice',
-      title: 'Seva Shulk / Keemat (Rate/Fee)',
-      hindiSub: 'आपकी फीस, विजिट चार्ज या सामान की कीमत क्या है?',
+      title: 'Keemat ya Rate (Price/Fee)',
+      hindiSub: 'सामान, प्रॉपर्टी की कीमत या सर्विस फीस क्या है?',
       icon: '💰',
       field: 'feeOrPrice',
-      placeholder: 'उदा. "300 रुपये" या "500"',
-      speechPrompt: 'अपनी सर्विस फीस या कीमत बताएं',
+      placeholder: 'उदा. "25 लाख" या "300 रुपये"',
+      speechPrompt: 'कीमत या फीस बताएं',
     },
     {
       id: 'specialties',
-      title: 'Aapke Mukhya Kaam / Specialization',
-      hindiSub: 'आप क्या-क्या मुख्य काम या सेवाएँ देते हैं?',
+      title: 'Vivaran / Specialties',
+      hindiSub: 'मुख्य खूबियां या विशेषताएं बताएं',
       icon: '🛠️',
       field: 'specialties',
-      placeholder: 'उदा. "वायरिंग, मोटर रिपेयरिंग, इनवर्टर"',
-      speechPrompt: 'अपने मुख्य काम और विशेषज्ञता के बारे में बताएं',
+      placeholder: 'उदा. "ईस्ट फेसिंग, बालकनी, कार पार्किंग"',
+      speechPrompt: 'मुख्य खूबियां या सुविधाएं बताएं',
     },
     {
       id: 'photos',
-      title: 'Photo Chunein (Upload Photos)',
-      hindiSub: 'अपने काम, दुकान, क्लिनिक या सर्टिफिकेट की फ़ोटो चुनें',
+      title: 'Photo Upload',
+      hindiSub: 'फ़ोन से फ़ोटो चुनें',
       icon: '📸',
-      field: 'images',
-      placeholder: 'कैमरा या गैलरी से फ़ोटो चुनें',
-      speechPrompt: 'कृपया अपने काम की फ़ोटो चुनें',
+      field: 'photos',
+      placeholder: 'फ़ोटो चुनें',
+      speechPrompt: 'कृपया फ़ोटो चुनें',
     },
   ];
 
@@ -138,13 +141,9 @@ export default function ContextualListingModal({
 
       recognition.onstart = () => setIsListening(true);
       recognition.onend = () => setIsListening(false);
-      recognition.onerror = (e) => {
-        console.error('Speech error:', e);
-        setIsListening(false);
-      };
+      recognition.onerror = () => setIsListening(false);
       recognition.onresult = (event) => {
         const text = event.results[0][0].transcript;
-        setVoiceTranscript(text);
         applyVoiceResult(voiceStep, text);
       };
 
@@ -163,16 +162,15 @@ export default function ContextualListingModal({
   };
 
   const startVoiceInput = () => {
-    setVoiceTranscript('');
     if (recognitionRef.current) {
       try {
         recognitionRef.current.start();
-      } catch (err) {
+      } catch {
         recognitionRef.current.stop();
         setTimeout(() => recognitionRef.current.start(), 200);
       }
     } else {
-      alert('Aapke browser me voice support nahi hai. Niche likhkar fill karein.');
+      alert('Voice recognition not supported on this browser. Please use the Write tab.');
     }
   };
 
@@ -182,70 +180,120 @@ export default function ContextualListingModal({
       const clean = text.replace(/[^0-9]/g, '');
       setFormData((prev) => ({ ...prev, phone: clean || text, whatsapp: clean || text }));
     } else if (fieldName === 'feeOrPrice') {
-      const clean = text.replace(/[^0-9]/g, '');
-      setFormData((prev) => ({ ...prev, feeOrPrice: clean || text }));
+      setFormData((prev) => ({ ...prev, feeOrPrice: text }));
     } else {
       setFormData((prev) => ({ ...prev, [fieldName]: text }));
     }
   };
 
-  const handleImageUpload = async (e) => {
+  // Multiple Image Selection Handler
+  const handleImageUpload = (e) => {
     const files = Array.from(e.target.files);
     if (!files.length) return;
 
-    setIsCompressing(true);
-    try {
-      const list = [];
-      for (const f of files) {
-        const compressed = await compressImage(f, { maxWidth: 1080, quality: 0.75, format: 'image/webp' });
-        list.push(compressed);
-      }
-      setFormData((prev) => ({ ...prev, images: [...prev.images, ...list] }));
-    } catch (err) {
-      console.error('Compression failed', err);
-    } finally {
-      setIsCompressing(false);
+    const newFiles = [...rawFiles, ...files];
+    setRawFiles(newFiles);
+
+    const newPreviews = files.map((file) => URL.createObjectURL(file));
+    setImagePreviews((prev) => [...prev, ...newPreviews]);
+  };
+
+  const handleRemovePhoto = (indexToRemove) => {
+    setRawFiles((prev) => prev.filter((_, idx) => idx !== indexToRemove));
+    setImagePreviews((prev) => prev.filter((_, idx) => idx !== indexToRemove));
+    if (primaryCoverIndex === indexToRemove) {
+      setPrimaryCoverIndex(0);
+    } else if (primaryCoverIndex > indexToRemove) {
+      setPrimaryCoverIndex((prev) => prev - 1);
     }
   };
 
-  const handleFinalPublish = (e) => {
+  // Central Publishing Engine (Optimistic UI + Background DB Sync)
+  const handleFinalPublish = async (e) => {
     if (e) e.preventDefault();
 
+    if (!formData.name.trim() || !formData.phone.trim()) {
+      alert('Please enter at least Title/Name and Phone Number.');
+      return;
+    }
+
+    setIsSubmitting(true);
+
     const selectedSectorObj = ALL_TOWN_CATEGORIES.find((c) => c.id === targetSector) || ALL_TOWN_CATEGORIES[0];
+    const targetBucket = selectedSectorObj.bucket;
 
-    const newEntry = {
-      id: `live-${Date.now()}`,
-      targetSector: targetSector,
-      targetBucket: selectedSectorObj.bucket,
-      name: formData.name || 'Apna Vyapar (Verified)',
-      title: formData.name || 'Apna Vyapar (Verified)',
-      phone: formData.phone || '+919876543210',
-      whatsapp: formData.whatsapp || formData.phone || '919876543210',
-      location: formData.location || selectedCity,
-      landmark: formData.landmark || 'Main Road',
-      distance: '0.1 km away (Near You)',
-      rating: 5.0,
+    const fallbackImg = 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=700';
+    const localCover = imagePreviews[primaryCoverIndex] || imagePreviews[0] || fallbackImg;
+    const localImages = imagePreviews.length > 0 ? imagePreviews : [localCover];
+
+    const tempId = `temp-${Date.now()}`;
+
+    // 1. Build Optimistic State Object
+    const optimisticPayload = normalizeDBListing({
+      id: tempId,
+      bucket_key: targetBucket,
+      category: targetSector,
+      sub_category: selectedSubCategory || 'all',
+      title: formData.name.trim(),
+      name: formData.name.trim(),
+      price: formData.feeOrPrice ? `₹ ${formData.feeOrPrice}` : 'Contact for Price',
+      description: formData.description || formData.specialties || '',
+      seller_name: formData.name.trim(),
+      phone: formData.phone.trim(),
+      whatsapp: formData.whatsapp.trim() || formData.phone.trim(),
+      location_name: formData.location || selectedCity,
+      image_url: localCover,
+      image_urls: localImages,
+      condition: 'Good',
+      interest_count: 0,
       verified: true,
-      badge: '🟢 Just Listed by You',
-      image: formData.images[0] || 'https://images.unsplash.com/photo-1556906781-9a412961c28c?w=700',
-      images: formData.images.length > 0 ? formData.images : ['https://images.unsplash.com/photo-1556906781-9a412961c28c?w=700'],
-      experience: formData.experience || 'Experienced',
-      freeTimeSlot: 'Available Today (उपलब्ध)',
-      visitingCharge: formData.feeOrPrice ? `₹ ${formData.feeOrPrice}` : 'Free Quote',
-      price: formData.feeOrPrice ? `₹ ${formData.feeOrPrice}` : 'On Request',
-      fee: formData.feeOrPrice ? `₹ ${formData.feeOrPrice}` : 'Affordable',
-      consultationFee: formData.feeOrPrice ? `₹ ${formData.feeOrPrice}` : '₹ 300',
-      qualifications: formData.qualifications || 'Certified Professional',
-      regNumber: formData.regNumber || 'Verified Practitioner',
-      specialties: formData.specialties ? formData.specialties.split(',').map((s) => s.trim()) : ['General Service', 'Instant Response'],
-      subjects: formData.specialties ? formData.specialties.split(',').map((s) => s.trim()) : ['General Syllabus'],
-      achievements: 'Verified Local Service / Shop in Town',
-      ratings: { overall: 5.0, punctuality: 5.0, costEffective: 5.0, quality: 5.0, behavior: 5.0, availability: 5.0 },
-      isAvailableNow: true,
-    };
+      distance: '0.1 km away (Near You)',
+    });
 
-    onAddListing(newEntry, selectedSectorObj.bucket);
+    // 2. Instant UI Update (0ms perceived latency)
+    hyperlocalStore.insertListing(targetBucket, optimisticPayload);
+    if (typeof onAddListing === 'function') {
+      onAddListing(optimisticPayload, targetBucket);
+    }
+
+    // Close Modal immediately
     onClose();
+
+    // 3. Background Cloud Storage Upload & Supabase Persistence
+    (async () => {
+      try {
+        const { coverUrl, allUrls } = await uploadMultipleListingImages(rawFiles, primaryCoverIndex);
+        const finalCover = coverUrl || fallbackImg;
+        const finalAll = allUrls.length > 0 ? allUrls : [finalCover];
+
+        const dbPayload = {
+          bucketKey: targetBucket,
+          category: targetSector,
+          subCategory: selectedSubCategory || 'all',
+          title: formData.name.trim(),
+          name: formData.name.trim(),
+          price: formData.feeOrPrice ? `₹ ${formData.feeOrPrice}` : 'Contact for Price',
+          description: formData.description || formData.specialties || '',
+          sellerName: formData.name.trim(),
+          phone: formData.phone.trim(),
+          whatsapp: formData.whatsapp.trim() || formData.phone.trim(),
+          location: formData.location || selectedCity,
+          image: finalCover,
+          images: finalAll,
+          condition: 'Good',
+        };
+
+        const savedRow = await insertListingToDB(dbPayload);
+        
+        if (savedRow && savedRow.id) {
+          // Replace optimistic temporary card with permanent database row
+          const confirmedNormalized = normalizeDBListing(savedRow);
+          hyperlocalStore.insertListing(targetBucket, confirmedNormalized);
+        }
+      } catch (err) {
+        console.error('Background persistence failed:', err);
+      }
+    })();
   };
 
   const activeSectorName = ALL_TOWN_CATEGORIES.find((c) => c.id === targetSector)?.name || 'Local Service';
@@ -261,7 +309,7 @@ export default function ContextualListingModal({
               <span className="text-2xl">📢</span>
               <div>
                 <h2 className="text-sm font-black leading-tight text-amber-300">
-                  Apni Seva / Dukaan Jodein
+                  Apni Seva / Dukaan / Listing Jodein
                 </h2>
                 <span className="text-[10px] text-emerald-400 font-bold block">
                   🎯 Target: {activeSectorName.split('(')[0]}
@@ -277,33 +325,33 @@ export default function ContextualListingModal({
             </button>
           </div>
 
-          {/* DUAL MODE TABS (SPEAK VS WRITE) */}
+          {/* DUAL MODE TABS */}
           <div className="grid grid-cols-2 gap-1.5 bg-black/40 p-1 rounded-2xl border border-white/10 mt-1">
             <button
               type="button"
-              onClick={() => {
-                setActiveTab('voice');
-                speakPrompt(voiceStepsConfig[voiceStep].speechPrompt);
-              }}
-              className={`py-2 rounded-xl text-xs font-black flex items-center justify-center space-x-1.5 transition-all ${
-                activeTab === 'voice'
-                  ? 'bg-gradient-to-r from-amber-400 to-yellow-400 text-slate-950 shadow-md scale-[1.02]'
-                  : 'text-slate-300 hover:text-white'
-              }`}
-            >
-              <span>🎙️ बोलकर जोड़ें (Speak)</span>
-            </button>
-
-            <button
-              type="button"
               onClick={() => setActiveTab('write')}
-              className={`py-2 rounded-xl text-xs font-black flex items-center justify-center space-x-1.5 transition-all ${
+              className={`py-2 rounded-xl text-xs font-black flex items-center justify-center space-x-1.5 transition-all cursor-pointer ${
                 activeTab === 'write'
                   ? 'bg-indigo-600 text-white shadow-md scale-[1.02]'
                   : 'text-slate-300 hover:text-white'
               }`}
             >
               <span>✍️ लिखकर जोड़ें (Write)</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab('voice');
+                speakPrompt(voiceStepsConfig[voiceStep].speechPrompt);
+              }}
+              className={`py-2 rounded-xl text-xs font-black flex items-center justify-center space-x-1.5 transition-all cursor-pointer ${
+                activeTab === 'voice'
+                  ? 'bg-gradient-to-r from-amber-400 to-yellow-400 text-slate-950 shadow-md scale-[1.02]'
+                  : 'text-slate-300 hover:text-white'
+              }`}
+            >
+              <span>🎙️ बोलकर जोड़ें (Speak)</span>
             </button>
           </div>
         </div>
@@ -312,7 +360,7 @@ export default function ContextualListingModal({
         {isOpenedFromHub && (
           <div className="px-4 py-2 bg-amber-50/70 border-b border-amber-200/60">
             <label className="text-[10px] font-black uppercase tracking-wider text-amber-900 block mb-1">
-              Select Your Business Category (श्रेणी चुनें)
+              Select Category (श्रेणी चुनें)
             </label>
             <select
               value={targetSector}
@@ -328,7 +376,161 @@ export default function ContextualListingModal({
           </div>
         )}
 
-        {/* MODE A: VOICE GUIDED STEP-BY-STEP */}
+        {/* MODE A: FAST WRITTEN FORM */}
+        {activeTab === 'write' && (
+          <form onSubmit={handleFinalPublish} className="p-4 overflow-y-auto space-y-3 text-xs text-slate-800">
+            <div>
+              <label className="font-extrabold text-slate-800 block mb-1">
+                Title / Business Name (नाम या टाइटल) *
+              </label>
+              <input
+                type="text"
+                required
+                placeholder="e.g. 2 BHK Flat Budh Vihar / Ramesh Electricals"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900 focus:outline-none focus:border-indigo-600"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Calling Number *</label>
+                <input
+                  type="tel"
+                  required
+                  placeholder="9876543210"
+                  value={formData.phone}
+                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900 focus:outline-none focus:border-indigo-600"
+                />
+              </div>
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">WhatsApp Number</label>
+                <input
+                  type="tel"
+                  placeholder="Same as phone"
+                  value={formData.whatsapp}
+                  onChange={(e) => setFormData({ ...formData, whatsapp: e.target.value })}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900 focus:outline-none focus:border-indigo-600"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Area / Colony *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Budh Vihar, Alwar"
+                  value={formData.location}
+                  onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900 focus:outline-none focus:border-indigo-600"
+                />
+              </div>
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Price / Fee (₹)</label>
+                <input
+                  type="text"
+                  placeholder="e.g. 25 Lakh or 300"
+                  value={formData.feeOrPrice}
+                  onChange={(e) => setFormData({ ...formData, feeOrPrice: e.target.value })}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900 focus:outline-none focus:border-indigo-600"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="font-bold text-slate-700 block mb-1">
+                Description / Key Features (विवरण व खूबियां)
+              </label>
+              <textarea
+                rows="2"
+                placeholder="Describe area, amenities, condition, parking, etc..."
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-semibold text-slate-900 focus:outline-none focus:border-indigo-600 resize-none"
+              ></textarea>
+            </div>
+
+            {/* 📷 MULTI-PHOTO UPLOAD & PRIMARY COVER PICKER */}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="font-bold text-slate-700">
+                  Upload Photos (Multiple Allowed)
+                </label>
+                <span className="text-[10px] text-slate-400 font-semibold">
+                  Tap photo to set as Cover Photo
+                </span>
+              </div>
+
+              <label className="block p-3 border-2 border-dashed border-slate-300 hover:border-indigo-500 bg-slate-50 rounded-xl text-center cursor-pointer transition">
+                <span className="text-xl block">📸</span>
+                <span className="text-xs font-bold text-slate-700 block mt-0.5">
+                  + Add Photos (फ़ोटो चुनें)
+                </span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={handleImageUpload}
+                  className="hidden"
+                />
+              </label>
+
+              {imagePreviews.length > 0 && (
+                <div className="grid grid-cols-3 gap-2 mt-2.5">
+                  {imagePreviews.map((src, idx) => {
+                    const isCover = primaryCoverIndex === idx;
+                    return (
+                      <div
+                        key={idx}
+                        onClick={() => setPrimaryCoverIndex(idx)}
+                        className={`relative h-20 rounded-xl overflow-hidden cursor-pointer border-2 transition ${
+                          isCover ? 'border-amber-400 ring-2 ring-amber-300' : 'border-slate-200 opacity-80'
+                        }`}
+                      >
+                        <img src={src} alt="Upload" className="w-full h-full object-cover" />
+                        
+                        <span
+                          className={`absolute top-1 left-1 text-[8px] font-black px-1.5 py-0.5 rounded-md ${
+                            isCover ? 'bg-amber-400 text-slate-950 shadow-sm' : 'bg-black/60 text-white'
+                          }`}
+                        >
+                          {isCover ? '★ Cover' : 'Set Cover'}
+                        </span>
+
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleRemovePhoto(idx);
+                          }}
+                          className="absolute top-1 right-1 w-5 h-5 bg-rose-600 text-white rounded-full flex items-center justify-center text-[10px] font-bold shadow-sm cursor-pointer"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="pt-2">
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="w-full py-3 bg-gradient-to-r from-indigo-600 to-indigo-800 hover:from-indigo-700 text-white rounded-2xl font-black text-sm shadow-md active:scale-95 transition cursor-pointer disabled:opacity-50"
+              >
+                {isSubmitting ? 'Uploading...' : '🚀 तुरंत प्रकाशित करें (Publish Listing)'}
+              </button>
+            </div>
+          </form>
+        )}
+
+        {/* MODE B: VOICE STEP-BY-STEP */}
         {activeTab === 'voice' && (
           <div className="p-4 overflow-y-auto space-y-4 text-slate-800">
             <div className="flex items-center justify-between text-[10px] font-extrabold text-slate-500 mb-1">
@@ -360,22 +562,32 @@ export default function ContextualListingModal({
               <div className="space-y-3">
                 <label className="block p-4 border-2 border-dashed border-amber-400 bg-amber-50/30 rounded-2xl text-center cursor-pointer hover:bg-amber-50">
                   <span className="text-3xl block mb-1">📸</span>
-                  <span className="text-xs font-black text-slate-900 block">फ़ोन से फ़ोटो चुनें या कैमरा खोलें</span>
-                  <span className="text-[10px] text-slate-500 font-semibold mt-0.5 block">
-                    (Auto-compressed WebP format)
-                  </span>
+                  <span className="text-xs font-black text-slate-900 block">फ़ोन से फ़ोटो चुनें</span>
                   <input type="file" accept="image/*" multiple onChange={handleImageUpload} className="hidden" />
                 </label>
-                {isCompressing && (
-                  <p className="text-center text-xs text-amber-800 font-bold animate-pulse">
-                    ⚡ फोटो कंप्रेस हो रही है...
-                  </p>
-                )}
-                {formData.images.length > 0 && (
-                  <div className="flex space-x-2 overflow-x-auto pb-1">
-                    {formData.images.map((src, i) => (
-                      <img key={i} src={src} alt="Uploaded" className="w-16 h-16 rounded-xl object-cover border border-slate-200 shadow-xs" />
-                    ))}
+                {imagePreviews.length > 0 && (
+                  <div className="grid grid-cols-3 gap-2 mt-2">
+                    {imagePreviews.map((src, idx) => {
+                      const isCover = primaryCoverIndex === idx;
+                      return (
+                        <div
+                          key={idx}
+                          onClick={() => setPrimaryCoverIndex(idx)}
+                          className={`relative h-20 rounded-xl overflow-hidden cursor-pointer border-2 transition ${
+                            isCover ? 'border-amber-400 ring-2 ring-amber-300' : 'border-slate-200 opacity-80'
+                          }`}
+                        >
+                          <img src={src} alt="Upload" className="w-full h-full object-cover" />
+                          <span
+                            className={`absolute top-1 left-1 text-[8px] font-black px-1.5 py-0.5 rounded-md ${
+                              isCover ? 'bg-amber-400 text-slate-950 shadow-sm' : 'bg-black/60 text-white'
+                            }`}
+                          >
+                            {isCover ? '★ Cover' : 'Set Cover'}
+                          </span>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -399,9 +611,6 @@ export default function ContextualListingModal({
                 </div>
 
                 <div>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                    Aapka Jawab (Your Spoken Answer)
-                  </label>
                   <input
                     type="text"
                     value={formData[voiceStepsConfig[voiceStep].field] || ''}
@@ -439,117 +648,22 @@ export default function ContextualListingModal({
                     setVoiceStep(next);
                     speakPrompt(voiceStepsConfig[next].speechPrompt);
                   }}
-                  className="py-3 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-black text-xs shadow-md active:scale-95 transition"
+                  className="py-3 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-black text-xs shadow-md active:scale-95 transition cursor-pointer"
                 >
                   अगला सवाल →
                 </button>
               ) : (
                 <button
                   type="button"
+                  disabled={isSubmitting}
                   onClick={handleFinalPublish}
-                  className="py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 text-white rounded-xl font-black text-xs shadow-md active:scale-95 transition cursor-pointer"
+                  className="py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 text-white rounded-xl font-black text-xs shadow-md active:scale-95 transition cursor-pointer disabled:opacity-50"
                 >
-                  🚀 लाइव प्रकाशित करें
+                  {isSubmitting ? 'Publishing...' : '🚀 लाइव प्रकाशित करें'}
                 </button>
               )}
             </div>
           </div>
-        )}
-
-        {/* MODE B: FAST WRITTEN FORM */}
-        {activeTab === 'write' && (
-          <form onSubmit={handleFinalPublish} className="p-4 overflow-y-auto space-y-3 text-xs text-slate-800">
-            <div>
-              <label className="font-extrabold text-slate-800 block mb-1">
-                Name / Business Title (नाम या दुकान का नाम) *
-              </label>
-              <input
-                type="text"
-                required
-                placeholder="e.g. Ramesh Electricals / Dr. Vivek Sharma"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900 focus:outline-none"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">Calling Number *</label>
-                <input
-                  type="tel"
-                  required
-                  placeholder="9876543210"
-                  value={formData.phone}
-                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900 focus:outline-none"
-                />
-              </div>
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">WhatsApp Number *</label>
-                <input
-                  type="tel"
-                  required
-                  placeholder="9876543210"
-                  value={formData.whatsapp}
-                  onChange={(e) => setFormData({ ...formData, whatsapp: e.target.value })}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900 focus:outline-none"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">Area / Colony *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Budh Vihar, Scheme 1"
-                  value={formData.location}
-                  onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900 focus:outline-none"
-                />
-              </div>
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">Rate / Visiting Fee (₹)</label>
-                <input
-                  type="number"
-                  placeholder="e.g. 300"
-                  value={formData.feeOrPrice}
-                  onChange={(e) => setFormData({ ...formData, feeOrPrice: e.target.value })}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900 focus:outline-none"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="font-bold text-slate-700 block mb-1">
-                Specialties / Key Services (मुख्य काम / सेवाएँ)
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. Wiring, Inverter Repair, AC Fitting"
-                value={formData.specialties}
-                onChange={(e) => setFormData({ ...formData, specialties: e.target.value })}
-                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-semibold text-slate-900 focus:outline-none"
-              />
-            </div>
-
-            <div>
-              <label className="font-bold text-slate-700 block mb-1">Photo Upload</label>
-              <input type="file" accept="image/*" multiple onChange={handleImageUpload} className="w-full text-xs text-slate-500 file:mr-2 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:bg-amber-100 file:text-amber-900 file:font-bold" />
-              {isCompressing && <p className="text-[10px] text-amber-700 font-bold mt-1">⚡ Compressing...</p>}
-            </div>
-
-            <div className="pt-2">
-              <button
-                type="submit"
-                className="w-full py-3 bg-gradient-to-r from-indigo-600 to-indigo-800 text-white rounded-2xl font-black text-sm shadow-md active:scale-95 transition"
-              >
-                🚀 तुरंत प्रकाशित करें (Publish Now)
-              </button>
-            </div>
-          </form>
         )}
 
       </div>
