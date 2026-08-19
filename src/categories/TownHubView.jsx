@@ -8,7 +8,7 @@ export default function TownHubView({ onSelectCategory }) {
     { id: 'market', name: 'Market (बाज़ार)', desc: 'Local Shops, Showrooms & Products', icon: '🏪', accent: 'from-emerald-500/10 to-teal-500/20 text-emerald-600' },
     { id: 'kaarigar', name: 'Kaarigar (कारीगर)', desc: 'Plumbers, Electricians, Carpenters & Mechanics', icon: '🛠️', accent: 'from-amber-500/10 to-orange-500/20 text-amber-600' },
     { id: 'transporters', name: 'Transporters (ट्रांसपोर्ट)', desc: 'Goods Pickups, Packers & Tempo Services', icon: '🚚', accent: 'from-purple-500/10 to-violet-500/20 text-purple-600' },
-    { id: 'wholesellers', name: 'Wholesellers (थोक व्यापारी)', desc: 'Bulk Supplies, Mandi & B2B Dealers', icon: '📦', accent: 'from-rose-500/10 to-pink-500/20 text-rose-600' },
+    //{ id: 'wholesellers', name: 'Wholesellers (थोक व्यापारी)', desc: 'Bulk Supplies, Mandi & B2B Dealers', icon: '📦', accent: 'from-rose-500/10 to-pink-500/20 text-rose-600' },
     { id: 'jobs', name: 'Local Jobs (नौकरी)', desc: 'Sales, Shop Staff, Drivers & Office Work', icon: '💼', accent: 'from-cyan-500/10 to-blue-500/20 text-cyan-600' },
     //{ id: 'news', name: 'Local News (खबर)', desc: 'Town Updates, Events & Weather Alerts', icon: '📰', accent: 'from-slate-500/10 to-zinc-500/20 text-slate-700' },
     { id: 'community', name: 'Community Service (जनहित)', desc: 'Blood Donation, NGO & Helplines', icon: '🤝', accent: 'from-red-500/10 to-orange-500/20 text-red-600' },

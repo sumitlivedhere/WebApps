@@ -6,11 +6,11 @@ import { useDebounce } from './hooks/useDebounce';
 import { FastPrefixSearchIndex } from './utils/fastEngine';
 import { hyperlocalStore, useStoreSlice } from './store/hyperlocalStore';
 
-// Core structural views
+// ==========================================
+// 1. LIGHTWEIGHT SYNCHRONOUS HUBS (0ms First Paint)
+// ==========================================
 import TownHubView from './categories/TownHubView';
-import ProviderDashboard from './ProviderDashboard';
-
-// Lightweight Synchronous Hubs (0ms Latency)
+import ReCommerceHub from './categories/ReCommerceHub';
 import CategoryHub from './categories/CategoryHub';
 import PropertyHub from './categories/PropertyHub';
 import VehicleHub from './categories/VehicleHub';
@@ -29,7 +29,10 @@ import KaarigarHub from './categories/KaarigarHub';
 import CommunityHub from './categories/CommunityHub';
 import TransporterHub from './categories/TransporterHub';
 
-// Lazy Loaded Feeds
+// ==========================================
+// 2. LAZY-LOADED INTERACTIVE FEEDS
+// ==========================================
+const ReCommerceFeed = lazy(() => import('./components/recommerce/ReCommerceFeed'));
 const MarketFeed = lazy(() => import('./components/MarketFeed'));
 const ShaadiFeed = lazy(() => import('./components/ShaadiFeed'));
 const AdvertisingFeed = lazy(() => import('./components/AdvertisingFeed'));
@@ -42,13 +45,12 @@ const KaarigarWorkerList = lazy(() => import('./components/KaarigarWorkerList'))
 const CommunityFeed = lazy(() => import('./components/CommunityFeed'));
 const TransporterFeed = lazy(() => import('./components/TransporterFeed'));
 const ListingsFeed = lazy(() => import('./components/ListingsFeed'));
-const ReCommerceFeed = lazy(() => import('./components/recommerce/ReCommerceFeed'));
-const ReCommerceSellerDashboard = lazy(() => import('./components/recommerce/ReCommerceSellerDashboard'));
+const ProviderDashboard = lazy(() => import('./ProviderDashboard'));
 
 import { marketCategories } from './data/marketData';
 
 export default function HyperlocalHomeFeed() {
-  const [userMode, setUserMode] = useState('buyer');
+  // Navigation & History Stack
   const [currentScreen, setCurrentScreen] = useState('hub');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedSubCategory, setSelectedSubCategory] = useState('all');
@@ -58,7 +60,7 @@ export default function HyperlocalHomeFeed() {
   const [searchQuery, setSearchQuery] = useState('');
   const debouncedSearchQuery = useDebounce(searchQuery, 120);
 
-  // Sub-Category State
+  // Active Hub Titles
   const [shaadiCategoryTitle, setShaadiCategoryTitle] = useState('');
   const [advertisingCategoryTitle, setAdvertisingCategoryTitle] = useState('');
   const [educationExamTitle, setEducationExamTitle] = useState('');
@@ -69,8 +71,10 @@ export default function HyperlocalHomeFeed() {
   const [whiteCollarCategoryTitle, setWhiteCollarCategoryTitle] = useState('');
   const [transporterViewMode, setTransporterViewMode] = useState('firms');
 
+  // Modals & Panels
   const [isPublishModalOpen, setIsPublishModalOpen] = useState(false);
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
+  const [isSellerHubOpen, setIsSellerHubOpen] = useState(false);
 
   // Atomic Store Subscriptions
   const listings = useStoreSlice('listings');
@@ -111,6 +115,7 @@ export default function HyperlocalHomeFeed() {
     [debouncedSearchQuery, marketSearch, marketProducts]
   );
 
+  // Live Notifications State
   const [notifications, setNotifications] = useState([
     {
       id: 1,
@@ -123,15 +128,25 @@ export default function HyperlocalHomeFeed() {
       subCategory: 'ac',
       productId: 11,
     },
+    {
+      id: 2,
+      tag: 'Price Drop',
+      title: 'Price Reduced on Hero Splendor',
+      message: 'Seller reduced price from ₹55,000 to ₹52,000 near Housing Board.',
+      time: '2h ago',
+      isRead: false,
+      price: '52,000',
+      subCategory: 'bikes',
+    },
   ]);
 
   const unreadCount = useMemo(() => notifications.filter((n) => !n.isRead).length, [notifications]);
 
+  // Contextual Sub-screen Name
   const getContextualName = useCallback(() => {
     switch (currentScreen) {
       case 'recommerce-feed':
-      case 'recommerce-hub':
-      case 'buysell-hub': return 'Buy & Sell Used (पुराना सामान)';
+      case 'recommerce-hub': return 'Buy & Sell Used (पुराना सामान)';
       case 'property-hub': return 'Property (प्रॉपर्टी)';
       case 'vehicle-hub': return 'Vehicles (गाड़ी व बाइक)';
       case 'furniture-hub': return 'Furniture (फर्नीचर)';
@@ -164,9 +179,10 @@ export default function HyperlocalHomeFeed() {
     }
   }, [currentScreen, selectedSubCategory]);
 
+  // Central Router Resolver
   const getHubScreenForCategory = useCallback((rawId) => {
     const id = String(rawId || '').toLowerCase().trim();
-    if (['recommerce', 'buysell', 'buy-sell', 'used', 'purana', 'old-items', 'second-hand', 're-commerce'].includes(id)) return 'recommerce-feed';
+    if (['recommerce', 'buysell', 'buy-sell', 'used', 'purana', 'old-items', 'second-hand', 're-commerce'].includes(id)) return 'recommerce-hub';
     if (['property', 'real-estate', 'zameen', 'plot'].includes(id)) return 'property-hub';
     if (['vehicle', 'vehicles', 'gadi', 'bike', 'car'].includes(id)) return 'vehicle-hub';
     if (['furniture', 'sofa', 'bed'].includes(id)) return 'furniture-hub';
@@ -177,7 +193,7 @@ export default function HyperlocalHomeFeed() {
     if (['transporters', 'transport', 'transportation', 'loading', 'tempo'].includes(id)) return 'transporter-hub';
     if (['community', 'social-welfare', 'welfare', 'seva', 'ngo'].includes(id)) return 'community-hub';
     if (['shaadi', 'shadi', 'wedding', 'matrimony', 'marriage', 'vivah', 'pre-wedding', 'wedding-event'].includes(id)) return 'shaadi-hub';
-    if (['advertising', 'ad', 'ads', 'adv', 'advertisement', 'marketing', 'prachar', 'branding', 'hoardings', 'pamphlet', 'pamphlets', 'promotion', 'promotions'].includes(id)) return 'advertising-hub';
+    if (['advertising', 'ad', 'ads', 'adv', 'advertisement', 'marketing', 'prachar', 'branding', 'hoardings', 'pamphlet', 'pamphlets', 'promotion'].includes(id)) return 'advertising-hub';
     if (['education', 'coaching', 'tuition', 'tuitions', 'teaching', 'tutor', 'tutors', 'exams', 'study', 'classes', 'shiksha'].includes(id)) return 'education-hub';
     if (['construction', 'nirman', 'builder', 'builders', 'thekedaar', 'thekedar', 'cement', 'architect', 'jcb'].includes(id)) return 'construction-hub';
     if (['malls', 'shopping', 'mall', 'boutique', 'boutiques', 'showroom', 'showrooms', 'outlets', 'fashion-mall'].includes(id)) return 'malls-hub';
@@ -186,6 +202,7 @@ export default function HyperlocalHomeFeed() {
     return 'category-hub';
   }, []);
 
+  // Forward Navigation
   const navigateForward = useCallback((updates) => {
     setHistory((prev) => [...prev, { currentScreen, selectedCategory, selectedSubCategory, nestedPropType }]);
     if (updates.screen !== undefined) setCurrentScreen(updates.screen);
@@ -194,6 +211,7 @@ export default function HyperlocalHomeFeed() {
     if (updates.nestedPropType !== undefined) setNestedPropType(updates.nestedPropType);
   }, [currentScreen, selectedCategory, selectedSubCategory, nestedPropType]);
 
+  // Back Navigation
   const goBack = useCallback(() => {
     if (history.length > 0) {
       const prev = history[history.length - 1];
@@ -210,6 +228,12 @@ export default function HyperlocalHomeFeed() {
     }
   }, [history]);
 
+  // Universal Bi-Directional Notification Dispatcher
+  const handleNewNotification = useCallback((notif) => {
+    setNotifications((prev) => [notif, ...prev]);
+  }, []);
+
+  // Global Contextual In-Category Publishing
   const handleAddNewListing = useCallback((newEntry, explicitBucket) => {
     let bucketKey = explicitBucket;
 
@@ -226,28 +250,49 @@ export default function HyperlocalHomeFeed() {
       else if (['advertising-hub', 'advertising-feed'].includes(screen)) bucketKey = 'advertisingProviders';
       else if (['community-hub', 'community-feed'].includes(screen)) bucketKey = 'communityDrives';
       else if (['transporter-hub', 'transporter-feed'].includes(screen)) bucketKey = 'individualTransporters';
-      else if (['recommerce-feed', 'recommerce-hub', 'buysell-hub'].includes(screen)) bucketKey = 'reCommerceListings';
+      else if (['recommerce-feed', 'recommerce-hub'].includes(screen)) bucketKey = 'reCommerceListings';
       else bucketKey = 'listings';
     }
 
     hyperlocalStore.insertListing(bucketKey, newEntry);
 
-    setNotifications((prev) => [
-      {
-        id: Date.now(),
-        tag: 'Listing Live',
-        title: `Your listing "${newEntry.name || newEntry.title}" is published!`,
-        message: `Visible instantly to all town buyers in ${selectedCity}.`,
-        time: 'Just now',
-        isRead: false,
-      },
-      ...prev,
-    ]);
-  }, [currentScreen, selectedCity]);
+    handleNewNotification({
+      id: Date.now(),
+      tag: 'Listing Live',
+      title: `Your listing "${newEntry.name || newEntry.title}" is published!`,
+      message: `Visible instantly to all town buyers in ${selectedCity}.`,
+      time: 'Just now',
+      isRead: false,
+    });
+  }, [currentScreen, selectedCity, handleNewNotification]);
+
+  const handleSetAlert = useCallback((alertData) => {
+    handleNewNotification({
+      id: Date.now(),
+      tag: 'Alert Subscribed',
+      title: `Subscribed to ${alertData.title}`,
+      message: `You will get instant updates as soon as sellers post new options in ${selectedCity}.`,
+      time: 'Just now',
+      isRead: false,
+      subCategory: alertData.subCategory,
+      productId: alertData.targetId,
+    });
+  }, [selectedCity, handleNewNotification]);
+
+  const handleNotificationClick = useCallback((notif) => {
+    setNotifications((prev) =>
+      prev.map((n) => (n.id === notif.id ? { ...n, isRead: true } : n))
+    );
+    setIsNotificationOpen(false);
+    if (notif.subCategory) {
+      navigateForward({ screen: 'listings', subCategory: notif.subCategory });
+    }
+  }, [navigateForward]);
 
   return (
     <div className="max-w-md mx-auto min-h-screen bg-slate-900/5 backdrop-blur-2xl pb-24 text-slate-800 font-sans relative overflow-hidden">
-     {/* 1. ADAPTIVE TOP BAR */}
+      
+      {/* 🌟 1. UNIFIED ADAPTIVE TOP HEADER */}
       <header className="sticky top-0 z-30 bg-indigo-700/95 backdrop-blur-md text-white p-3.5 shadow-lg border-b border-white/10">
         {currentScreen === 'hub' ? (
           <>
@@ -265,7 +310,7 @@ export default function HyperlocalHomeFeed() {
                 </select>
               </div>
 
-              {/* CONTEXTUAL LIVE TOWN ALERTS BEACON */}
+              {/* LIVE ALERTS BEACON */}
               <div className="flex items-center space-x-2">
                 <button
                   type="button"
@@ -291,17 +336,13 @@ export default function HyperlocalHomeFeed() {
               placeholder="Search across all town services, shops & items..."
             />
 
-            {/* 🌟 PROMINENT MOVING LIGHT CURRENT & WIGGLE ONBOARDING WIDGET */}
+            {/* 🌟 PROMINENT MOVING LIGHT CURRENT ONBOARDING WIDGET */}
             <div className="mt-3 relative animate-wiggle-subtle">
-              {/* Rotating Light Current Border */}
               <div className="absolute -inset-[2px] rounded-2xl overflow-hidden pointer-events-none">
                 <div className="w-[250%] h-[250%] absolute -top-[75%] -left-[75%] bg-[conic-gradient(from_0deg,transparent_0_280deg,#fef08a_320deg,#f59e0b_360deg)] animate-[spin_3s_linear_infinite]"></div>
               </div>
-
-              {/* Glowing Ambient Halo */}
               <div className="absolute -inset-[1px] rounded-2xl bg-amber-400/20 blur-sm pointer-events-none"></div>
 
-              {/* Action Button */}
               <button
                 type="button"
                 onClick={() => setIsPublishModalOpen(true)}
@@ -330,32 +371,6 @@ export default function HyperlocalHomeFeed() {
                 </div>
               </button>
             </div>
-
-            <div className="mt-2.5 pt-2 border-t border-white/10 flex items-center justify-between">
-              <span className="text-[11px] font-bold text-indigo-100">
-                {userMode === 'buyer' ? '👤 Consumer Mode' : '💼 Business Mode'}
-              </span>
-              <div className="flex bg-indigo-900/60 p-0.5 rounded-full border border-white/20">
-                <button
-                  type="button"
-                  onClick={() => setUserMode('buyer')}
-                  className={`px-3 py-1 rounded-full text-[10px] font-black transition-all ${
-                    userMode === 'buyer' ? 'bg-white text-indigo-900 shadow-sm' : 'text-indigo-200 hover:text-white'
-                  }`}
-                >
-                  Need Service
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setUserMode('provider')}
-                  className={`px-3 py-1 rounded-full text-[10px] font-black transition-all ${
-                    userMode === 'provider' ? 'bg-amber-400 text-slate-900 shadow-sm' : 'text-indigo-200 hover:text-white'
-                  }`}
-                >
-                  Provide / Sell
-                </button>
-              </div>
-            </div>
           </>
         ) : (
           <div>
@@ -373,12 +388,10 @@ export default function HyperlocalHomeFeed() {
                 </span>
               </div>
 
-             {/* CONTEXTUAL LIVE TOWN ALERTS BEACON */}
               <button
                 type="button"
                 onClick={() => setIsNotificationOpen(true)}
                 className="relative flex items-center space-x-1.5 px-2.5 py-1 bg-indigo-950/70 hover:bg-indigo-900/80 text-white rounded-full border border-indigo-400/40 shadow-xs active:scale-95 transition cursor-pointer"
-                title="View Category Alerts"
               >
                 <span className={`text-sm ${unreadCount > 0 ? 'animate-bell-ring' : ''}`}>🔔</span>
                 {unreadCount > 0 && (
@@ -398,17 +411,13 @@ export default function HyperlocalHomeFeed() {
               />
             </div>
 
-            {/* 🌟 PROMINENT MOVING LIGHT CURRENT & WIGGLE IN-CATEGORY WIDGET */}
+            {/* IN-CATEGORY MOVING LIGHT CURRENT BANNER */}
             <div className="mt-3 relative animate-wiggle-subtle">
-              {/* Rotating Light Current Border */}
               <div className="absolute -inset-[2px] rounded-2xl overflow-hidden pointer-events-none">
                 <div className="w-[250%] h-[250%] absolute -top-[75%] -left-[75%] bg-[conic-gradient(from_0deg,transparent_0_280deg,#fef08a_320deg,#f59e0b_360deg)] animate-[spin_3s_linear_infinite]"></div>
               </div>
-
-              {/* Glowing Ambient Halo */}
               <div className="absolute -inset-[1px] rounded-2xl bg-amber-400/20 blur-sm pointer-events-none"></div>
 
-              {/* Action Button */}
               <button
                 type="button"
                 onClick={() => setIsPublishModalOpen(true)}
@@ -435,35 +444,11 @@ export default function HyperlocalHomeFeed() {
         )}
       </header>
 
-      {/* 2. DYNAMIC VIEW CONTAINER */}
+      {/* 🌟 2. VIEW CONTAINER WITH SUSPENSE */}
       <Suspense fallback={<div className="p-8 text-center text-xs font-bold text-slate-400">Loading fast view...</div>}>
-        {userMode === 'provider' && (currentScreen === 'recommerce-feed' || currentScreen === 'recommerce-hub' || currentScreen === 'buysell-hub') && (
-          <ReCommerceSellerDashboard
-            myListings={reCommerceListings}
-            onAddNewListing={(newItem) => {
-              hyperlocalStore.insertListing('reCommerceListings', newItem);
-              setUserMode('buyer');
-            }}
-            onToggleStatus={() => {}}
-            onBackToHub={() => setUserMode('buyer')}
-          />
-        )}
-
-        {userMode === 'provider' && currentScreen !== 'recommerce-feed' && currentScreen !== 'recommerce-hub' && currentScreen !== 'buysell-hub' && (
-          <ProviderDashboard
-            onBackToUserMode={() => setUserMode('buyer')}
-            onAddListing={(newItem) => {
-              handleAddNewListing(newItem);
-              setUserMode('buyer');
-            }}
-          />
-        )}
-
-        {userMode === 'buyer' && (currentScreen === 'recommerce-feed' || currentScreen === 'recommerce-hub' || currentScreen === 'buysell-hub') && (
-          <ReCommerceFeed listings={reCommerceListings} selectedCity={selectedCity} searchQuery={debouncedSearchQuery} onBack={goBack} />
-        )}
-
-        {userMode === 'buyer' && currentScreen === 'hub' && (
+        
+        {/* HOMEPAGE TILES */}
+        {currentScreen === 'hub' && (
           <TownHubView
             onSelectCategory={(catId) => {
               const targetScreen = getHubScreenForCategory(catId);
@@ -472,19 +457,40 @@ export default function HyperlocalHomeFeed() {
           />
         )}
 
-        {userMode === 'buyer' && currentScreen === 'fashion-hub' && (
-          <FashionHub onSelectFashionType={(fType) => navigateForward({ screen: 'listings', subCategory: fType })} onBack={goBack} />
+        {/* RE-COMMERCE FLOW: CATEGORY TILES FIRST */}
+        {currentScreen === 'recommerce-hub' && (
+          <ReCommerceHub
+            onSelectCategory={(catId) => {
+              navigateForward({
+                screen: 'recommerce-feed',
+                subCategory: catId,
+              });
+            }}
+            onBack={goBack}
+          />
         )}
 
-        {userMode === 'buyer' && currentScreen === 'market-hub' && (
+        {/* RE-COMMERCE FEED: FULL IMAGES & REELS-STYLE RIGHT OVERLAYS */}
+        {currentScreen === 'recommerce-feed' && (
+          <ReCommerceFeed
+            listings={reCommerceListings}
+            selectedSubCategory={selectedSubCategory}
+            selectedCity={selectedCity}
+            searchQuery={debouncedSearchQuery}
+            onBack={goBack}
+            onNewNotification={handleNewNotification}
+          />
+        )}
+
+        {/* MARKET HUB & FEED */}
+        {currentScreen === 'market-hub' && (
           <MarketHub
             onSelectMarketCategory={(catId) => navigateForward({ screen: 'market-feed', category: catId, subCategory: 'all' })}
             onSelectSubCategory={(catId, subCatId) => navigateForward({ screen: 'market-feed', category: catId, subCategory: subCatId })}
             onBack={goBack}
           />
         )}
-
-        {userMode === 'buyer' && currentScreen === 'market-feed' && (
+        {currentScreen === 'market-feed' && (
           <MarketFeed
             products={activeMarketProducts}
             categoryTitle={marketCategories.find((c) => c.id === selectedCategory)?.name || 'Market Products'}
@@ -493,128 +499,214 @@ export default function HyperlocalHomeFeed() {
             selectedCity={selectedCity}
             searchQuery={debouncedSearchQuery}
             onBack={goBack}
+            onSetAlert={handleSetAlert}
+            onNewNotification={handleNewNotification}
           />
         )}
 
-        {userMode === 'buyer' && currentScreen === 'kaarigar-hub' && (
+        {/* KAARIGAR HUB & FEED */}
+        {currentScreen === 'kaarigar-hub' && (
           <KaarigarHub onSelectTrade={(tradeId) => navigateForward({ screen: 'kaarigar-feed', subCategory: tradeId })} onBack={goBack} />
         )}
-
-        {userMode === 'buyer' && currentScreen === 'kaarigar-feed' && (
-          <KaarigarWorkerList workers={activeKaarigarWorkers} selectedTradeId={selectedSubCategory} selectedCity={selectedCity} searchQuery={debouncedSearchQuery} onBack={goBack} />
+        {currentScreen === 'kaarigar-feed' && (
+          <KaarigarWorkerList
+            workers={activeKaarigarWorkers}
+            selectedTradeId={selectedSubCategory}
+            selectedCity={selectedCity}
+            searchQuery={debouncedSearchQuery}
+            onBack={goBack}
+            onNewNotification={handleNewNotification}
+          />
         )}
 
-        {userMode === 'buyer' && currentScreen === 'transporter-hub' && (
+        {/* TRANSPORTER HUB & FEED */}
+        {currentScreen === 'transporter-hub' && (
           <TransporterHub
             onSelectFirms={() => { setTransporterViewMode('firms'); navigateForward({ screen: 'transporter-feed', subCategory: 'firms' }); }}
             onSelectIndividualVehicle={(vehicleId) => { setTransporterViewMode('individual'); navigateForward({ screen: 'transporter-feed', subCategory: vehicleId }); }}
             onBack={goBack}
           />
         )}
-
-        {userMode === 'buyer' && currentScreen === 'transporter-feed' && (
-          <TransporterFeed viewMode={transporterViewMode} firms={transportFirms} individualTransporters={individualTransporters} selectedVehicleType={selectedSubCategory} selectedCity={selectedCity} searchQuery={debouncedSearchQuery} onBack={goBack} />
+        {currentScreen === 'transporter-feed' && (
+          <TransporterFeed
+            viewMode={transporterViewMode}
+            firms={transportFirms}
+            individualTransporters={individualTransporters}
+            selectedVehicleType={selectedSubCategory}
+            selectedCity={selectedCity}
+            searchQuery={debouncedSearchQuery}
+            onBack={goBack}
+            onNewNotification={handleNewNotification}
+          />
         )}
 
-        {userMode === 'buyer' && currentScreen === 'community-hub' && (
+        {/* COMMUNITY HUB & FEED */}
+        {currentScreen === 'community-hub' && (
           <CommunityHub onSelectPillar={(pillarId) => navigateForward({ screen: 'community-feed', subCategory: pillarId })} onBack={goBack} />
         )}
-
-        {userMode === 'buyer' && currentScreen === 'community-feed' && (
-          <CommunityFeed drives={communityDrives} selectedPillarId={selectedSubCategory} selectedCity={selectedCity} searchQuery={debouncedSearchQuery} onBack={goBack} />
+        {currentScreen === 'community-feed' && (
+          <CommunityFeed
+            drives={communityDrives}
+            selectedPillarId={selectedSubCategory}
+            selectedCity={selectedCity}
+            searchQuery={debouncedSearchQuery}
+            onBack={goBack}
+            onNewNotification={handleNewNotification}
+          />
         )}
 
-        {userMode === 'buyer' && currentScreen === 'shaadi-hub' && (
+        {/* SHAADI HUB & FEED */}
+        {currentScreen === 'shaadi-hub' && (
           <ShaadiHub
             onSelectShaadiCategory={(catId, catName) => { setShaadiCategoryTitle(catName); navigateForward({ screen: 'shaadi-feed', subCategory: catId }); }}
             onNavigateCrossCategory={(targetHub) => navigateForward({ screen: targetHub })}
             onBack={goBack}
           />
         )}
-
-        {userMode === 'buyer' && currentScreen === 'shaadi-feed' && (
-          <ShaadiFeed vendors={shaadiVendors} selectedCategory={selectedSubCategory} categoryTitle={shaadiCategoryTitle} selectedCity={selectedCity} searchQuery={debouncedSearchQuery} onBack={goBack} />
+        {currentScreen === 'shaadi-feed' && (
+          <ShaadiFeed
+            vendors={shaadiVendors}
+            selectedCategory={selectedSubCategory}
+            categoryTitle={shaadiCategoryTitle}
+            selectedCity={selectedCity}
+            searchQuery={debouncedSearchQuery}
+            onBack={goBack}
+            onNewNotification={handleNewNotification}
+          />
         )}
 
-        {userMode === 'buyer' && currentScreen === 'advertising-hub' && (
+        {/* ADVERTISING HUB & FEED */}
+        {currentScreen === 'advertising-hub' && (
           <AdvertisingHub
             onSelectCategory={(catId, catName) => { setAdvertisingCategoryTitle(catName); navigateForward({ screen: 'advertising-feed', subCategory: catId }); }}
             onBack={goBack}
           />
         )}
-
-        {userMode === 'buyer' && currentScreen === 'advertising-feed' && (
-          <AdvertisingFeed providers={advertisingProviders} selectedCategory={selectedSubCategory} categoryTitle={advertisingCategoryTitle} selectedCity={selectedCity} searchQuery={debouncedSearchQuery} onBack={goBack} />
+        {currentScreen === 'advertising-feed' && (
+          <AdvertisingFeed
+            providers={advertisingProviders}
+            selectedCategory={selectedSubCategory}
+            categoryTitle={advertisingCategoryTitle}
+            selectedCity={selectedCity}
+            searchQuery={debouncedSearchQuery}
+            onBack={goBack}
+            onNewNotification={handleNewNotification}
+          />
         )}
 
-        {userMode === 'buyer' && currentScreen === 'education-hub' && (
+        {/* EDUCATION HUB & FEED */}
+        {currentScreen === 'education-hub' && (
           <EducationHub
             onSelectExamCategory={(examId, examName, format) => { setEducationExamTitle(examName); setEducationFormatFilter(format || 'all'); navigateForward({ screen: 'education-feed', subCategory: examId }); }}
             onBack={goBack}
           />
         )}
-
-        {userMode === 'buyer' && currentScreen === 'education-feed' && (
-          <EducationFeed listings={educationListings} selectedExamId={selectedSubCategory} examTitle={educationExamTitle} initialFormatFilter={educationFormatFilter} selectedCity={selectedCity} searchQuery={debouncedSearchQuery} onBack={goBack} />
+        {currentScreen === 'education-feed' && (
+          <EducationFeed
+            listings={educationListings}
+            selectedExamId={selectedSubCategory}
+            examTitle={educationExamTitle}
+            initialFormatFilter={educationFormatFilter}
+            selectedCity={selectedCity}
+            searchQuery={debouncedSearchQuery}
+            onBack={goBack}
+            onNewNotification={handleNewNotification}
+          />
         )}
 
-        {userMode === 'buyer' && currentScreen === 'construction-hub' && (
+        {/* CONSTRUCTION HUB & FEED */}
+        {currentScreen === 'construction-hub' && (
           <ConstructionHub
             onSelectSector={(sectorId, sectorName) => { setConstructionSectorTitle(sectorName); navigateForward({ screen: 'construction-feed', subCategory: sectorId }); }}
             onBack={goBack}
           />
         )}
-
-        {userMode === 'buyer' && currentScreen === 'construction-feed' && (
-          <ConstructionFeed listings={constructionListings} selectedSectorId={selectedSubCategory} sectorTitle={constructionSectorTitle} selectedCity={selectedCity} searchQuery={debouncedSearchQuery} onBack={goBack} />
+        {currentScreen === 'construction-feed' && (
+          <ConstructionFeed
+            listings={constructionListings}
+            selectedSectorId={selectedSubCategory}
+            sectorTitle={constructionSectorTitle}
+            selectedCity={selectedCity}
+            searchQuery={debouncedSearchQuery}
+            onBack={goBack}
+            onNewNotification={handleNewNotification}
+          />
         )}
 
-        {userMode === 'buyer' && currentScreen === 'malls-hub' && (
+        {/* MALLS HUB & FEED */}
+        {currentScreen === 'malls-hub' && (
           <MallsHub
             onSelectCategory={(catId, catName) => { setMallsCategoryTitle(catName); navigateForward({ screen: 'malls-feed', subCategory: catId }); }}
             onBack={goBack}
           />
         )}
-
-        {userMode === 'buyer' && currentScreen === 'malls-feed' && (
-          <MallsFeed stores={mallsStores} selectedCategoryId={selectedSubCategory} categoryTitle={mallsCategoryTitle} selectedCity={selectedCity} searchQuery={debouncedSearchQuery} onBack={goBack} />
+        {currentScreen === 'malls-feed' && (
+          <MallsFeed
+            stores={mallsStores}
+            selectedCategoryId={selectedSubCategory}
+            categoryTitle={mallsCategoryTitle}
+            selectedCity={selectedCity}
+            searchQuery={debouncedSearchQuery}
+            onBack={goBack}
+            onNewNotification={handleNewNotification}
+          />
         )}
 
-        {userMode === 'buyer' && currentScreen === 'restaurants-hub' && (
+        {/* RESTAURANTS HUB & FEED */}
+        {currentScreen === 'restaurants-hub' && (
           <RestaurantsHub
             onSelectCategory={(catId, catName) => { setRestaurantCategoryTitle(catName); navigateForward({ screen: 'restaurants-feed', subCategory: catId }); }}
             onBack={goBack}
           />
         )}
-
-        {userMode === 'buyer' && currentScreen === 'restaurants-feed' && (
-          <RestaurantsFeed restaurants={restaurantsList} selectedCategoryId={selectedSubCategory} categoryTitle={restaurantCategoryTitle} selectedCity={selectedCity} searchQuery={debouncedSearchQuery} onBack={goBack} />
+        {currentScreen === 'restaurants-feed' && (
+          <RestaurantsFeed
+            restaurants={restaurantsList}
+            selectedCategoryId={selectedSubCategory}
+            categoryTitle={restaurantCategoryTitle}
+            selectedCity={selectedCity}
+            searchQuery={debouncedSearchQuery}
+            onBack={goBack}
+            onNewNotification={handleNewNotification}
+          />
         )}
 
-        {userMode === 'buyer' && currentScreen === 'white-collar-hub' && (
+        {/* WHITE COLLAR HUB & FEED */}
+        {currentScreen === 'white-collar-hub' && (
           <WhiteCollarHub
             onSelectCategory={(catId, catName) => { setWhiteCollarCategoryTitle(catName); navigateForward({ screen: 'white-collar-feed', subCategory: catId }); }}
             onBack={goBack}
           />
         )}
-
-        {userMode === 'buyer' && currentScreen === 'white-collar-feed' && (
-          <WhiteCollarFeed listings={whiteCollarListings} selectedCategoryId={selectedSubCategory} categoryTitle={whiteCollarCategoryTitle} selectedCity={selectedCity} searchQuery={debouncedSearchQuery} onBack={goBack} />
+        {currentScreen === 'white-collar-feed' && (
+          <WhiteCollarFeed
+            listings={whiteCollarListings}
+            selectedCategoryId={selectedSubCategory}
+            categoryTitle={whiteCollarCategoryTitle}
+            selectedCity={selectedCity}
+            searchQuery={debouncedSearchQuery}
+            onBack={goBack}
+            onNewNotification={handleNewNotification}
+          />
         )}
 
-        {userMode === 'buyer' && currentScreen === 'electronics-hub' && (
+        {/* GENERAL CATEGORY HUBS */}
+        {currentScreen === 'fashion-hub' && (
+          <FashionHub onSelectFashionType={(fType) => navigateForward({ screen: 'listings', subCategory: fType })} onBack={goBack} />
+        )}
+        {currentScreen === 'electronics-hub' && (
           <ElectronicsHub onSelectElectronicsType={(eType) => navigateForward({ screen: 'listings', subCategory: eType })} onBack={goBack} />
         )}
-
-        {userMode === 'buyer' && currentScreen === 'vehicle-hub' && (
+        {currentScreen === 'vehicle-hub' && (
           <VehicleHub onSelectVehicleType={(vType) => navigateForward({ screen: 'listings', subCategory: vType })} onBack={goBack} />
         )}
-
-        {userMode === 'buyer' && currentScreen === 'property-hub' && (
+        {currentScreen === 'furniture-hub' && (
+          <FurnitureHub onSelectFurnitureType={(fType) => navigateForward({ screen: 'listings', subCategory: fType })} onBack={goBack} />
+        )}
+        {currentScreen === 'property-hub' && (
           <PropertyHub nestedPropType={nestedPropType} onSelectNestedType={(type) => navigateForward({ nestedPropType: type })} onSelectPropertyType={(propType) => navigateForward({ screen: 'listings', subCategory: propType })} onBack={goBack} />
         )}
-
-        {userMode === 'buyer' && currentScreen === 'category-hub' && (
+        {currentScreen === 'category-hub' && (
           <CategoryHub
             categoryId={selectedCategory}
             onSelectSubCategory={(subCatId) => {
@@ -628,13 +720,32 @@ export default function HyperlocalHomeFeed() {
             onBack={goBack}
           />
         )}
+        {currentScreen === 'listings' && (
+          <ListingsFeed
+            listings={listings}
+            selectedCategory={selectedCategory}
+            selectedSubCategory={selectedSubCategory}
+            selectedCity={selectedCity}
+            searchQuery={debouncedSearchQuery}
+            onBack={goBack}
+            onSetAlert={handleSetAlert}
+            onNewNotification={handleNewNotification}
+          />
+        )}
 
-        {userMode === 'buyer' && currentScreen === 'listings' && (
-          <ListingsFeed listings={listings} selectedCategory={selectedCategory} selectedSubCategory={selectedSubCategory} selectedCity={selectedCity} searchQuery={debouncedSearchQuery} onBack={goBack} />
+        {/* SELLER HUB MODAL VIEW */}
+        {isSellerHubOpen && (
+          <ProviderDashboard
+            onBackToUserMode={() => setIsSellerHubOpen(false)}
+            onAddListing={(newItem) => {
+              handleAddNewListing(newItem);
+              setIsSellerHubOpen(false);
+            }}
+          />
         )}
       </Suspense>
 
-      {/* 3. CONTEXTUAL LISTING MODAL */}
+      {/* 🌟 3. GLOBAL CONTEXTUAL LISTING MODAL (VOICE & WRITE MODES) */}
       {isPublishModalOpen && (
         <ContextualListingModal
           currentScreen={currentScreen}
@@ -646,42 +757,60 @@ export default function HyperlocalHomeFeed() {
         />
       )}
 
-      {/* 4. NOTIFICATION CENTER */}
+      {/* 🌟 4. TOWN NOTIFICATION CENTER */}
       <NotificationCenter
         isOpen={isNotificationOpen}
         onClose={() => setIsNotificationOpen(false)}
         notifications={notifications}
-        onNotificationClick={(notif) => {
-          setIsNotificationOpen(false);
-          if (notif.subCategory) {
-            navigateForward({ screen: 'listings', subCategory: notif.subCategory });
-          }
-        }}
+        onNotificationClick={handleNotificationClick}
         onClearAll={() => setNotifications([])}
       />
 
-      {/* 5. BOTTOM NAVIGATION */}
+      {/* 🌟 5. CLEAN FIXED BOTTOM NAVIGATION BAR */}
       <footer className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white/90 backdrop-blur-md border-t border-slate-200 px-4 py-2 flex justify-around items-center z-30">
-        <button onClick={() => { setCurrentScreen('hub'); setUserMode('buyer'); }} className="flex flex-col items-center text-indigo-600 font-bold text-[10px] cursor-pointer">
+        <button
+          onClick={() => {
+            setIsSellerHubOpen(false);
+            setCurrentScreen('hub');
+          }}
+          className="flex flex-col items-center text-indigo-600 font-bold text-[10px] cursor-pointer"
+        >
           <span className="text-lg">🏠</span>
           <span>Home</span>
         </button>
-        <button onClick={() => navigateForward({ screen: 'recommerce-feed' })} className="flex flex-col items-center text-slate-400 font-medium text-[10px] cursor-pointer">
-          <span className="text-lg">🔍</span>
-          <span>Explore</span>
+        <button
+          onClick={() => {
+            setIsSellerHubOpen(false);
+            navigateForward({ screen: 'recommerce-hub' });
+          }}
+          className="flex flex-col items-center text-slate-400 font-medium text-[10px] cursor-pointer"
+        >
+          <span className="text-lg">🛍️</span>
+          <span>Re-commerce</span>
         </button>
-        <button onClick={() => setIsPublishModalOpen(true)} className="bg-indigo-600 hover:bg-indigo-700 text-white p-3 rounded-full shadow-lg -mt-6 border-4 border-slate-50 flex items-center justify-center hover:scale-105 transition cursor-pointer">
-          <span className="text-xl font-bold">+</span>
+        <button
+          onClick={() => setIsPublishModalOpen(true)}
+          className="bg-gradient-to-r from-amber-400 to-yellow-400 hover:from-amber-300 hover:to-yellow-300 text-slate-950 p-3 rounded-full shadow-lg -mt-6 border-4 border-slate-50 flex items-center justify-center hover:scale-105 transition cursor-pointer font-black"
+          title="Post Free Listing"
+        >
+          <span className="text-xl font-black">+</span>
         </button>
-        <button onClick={() => setIsNotificationOpen(true)} className="flex flex-col items-center text-slate-400 font-medium text-[10px] cursor-pointer">
+        <button
+          onClick={() => setIsNotificationOpen(true)}
+          className="flex flex-col items-center text-slate-400 font-medium text-[10px] cursor-pointer"
+        >
           <span className="text-lg">🔔</span>
           <span>Alerts</span>
         </button>
-        <button onClick={() => setUserMode(userMode === 'buyer' ? 'provider' : 'buyer')} className="flex flex-col items-center text-slate-400 font-medium text-[10px] cursor-pointer">
-          <span className="text-lg">👤</span>
-          <span>{userMode === 'buyer' ? 'Seller Hub' : 'Buyer Hub'}</span>
+        <button
+          onClick={() => setIsSellerHubOpen(!isSellerHubOpen)}
+          className="flex flex-col items-center text-slate-400 font-medium text-[10px] cursor-pointer"
+        >
+          <span className="text-lg">💼</span>
+          <span>My Hub</span>
         </button>
       </footer>
+
     </div>
   );
 }

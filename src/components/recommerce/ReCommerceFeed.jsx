@@ -1,192 +1,137 @@
-import React, { useState, useMemo } from 'react';
-import { RE_COMMERCE_SUB_CATEGORIES, RE_COMMERCE_CONDITIONS } from '../../data/reCommerceData';
+import React from 'react';
+import ActionButtons from '../common/ActionButtons';
+import ListingDiscussionThread from '../common/ListingDiscussionThread';
 
-export default function ReCommerceFeed({ listings, selectedCity, searchQuery, onBack }) {
-  const [activeSubCat, setActiveSubCat] = useState('all');
-  const [selectedCondition, setSelectedCondition] = useState('all');
-  const [negotiableOnly, setNegotiableOnly] = useState(false);
-  const [sortOrder, setSortOrder] = useState('newest');
-
-  const filteredItems = useMemo(() => {
-    const q = searchQuery ? searchQuery.toLowerCase().trim() : '';
-
-    const results = [];
-    for (let i = 0; i < listings.length; i++) {
-      const item = listings[i];
-
-      if (item.status === 'SOLD') continue;
-      if (activeSubCat !== 'all' && item.subCategory !== activeSubCat) continue;
-      if (selectedCondition !== 'all' && item.condition !== selectedCondition) continue;
-      if (negotiableOnly && !item.isNegotiable) continue;
-
-      if (q) {
-        const matches =
-          item.title.toLowerCase().includes(q) ||
-          item.location.toLowerCase().includes(q) ||
-          item.description.toLowerCase().includes(q);
-        if (!matches) continue;
+export default function ReCommerceFeed({
+  listings = [],
+  selectedSubCategory = 'all',
+  selectedCity = 'Alwar',
+  searchQuery = '',
+  onBack,
+  onNewNotification,
+}) {
+  const filtered = listings
+    .filter((item) => {
+      if (selectedSubCategory && selectedSubCategory !== 'all') {
+        return item.category === selectedSubCategory || item.subCategory === selectedSubCategory;
       }
-
-      results.push(item);
-    }
-
-    if (sortOrder === 'low-to-high') {
-      results.sort((a, b) => a.rawPrice - b.rawPrice);
-    } else if (sortOrder === 'high-to-low') {
-      results.sort((a, b) => b.rawPrice - a.rawPrice);
-    }
-
-    return results;
-  }, [listings, activeSubCat, selectedCondition, negotiableOnly, sortOrder, searchQuery]);
+      return true;
+    })
+    .filter((item) => {
+      if (!searchQuery) return true;
+      const q = searchQuery.toLowerCase();
+      return (
+        item.title?.toLowerCase().includes(q) ||
+        item.description?.toLowerCase().includes(q) ||
+        item.location?.toLowerCase().includes(q) ||
+        item.sellerName?.toLowerCase().includes(q)
+      );
+    });
 
   return (
-    <div className="space-y-3 p-3 animate-fadeIn pb-24 text-slate-800">
-      {/* Subcategory Pills */}
-      <div className="flex space-x-2 overflow-x-auto no-scrollbar py-1">
-        {RE_COMMERCE_SUB_CATEGORIES.map((cat) => (
-          <button
-            key={cat.id}
-            type="button"
-            onClick={() => setActiveSubCat(cat.id)}
-            className={`px-3 py-1.5 rounded-xl text-xs font-black whitespace-nowrap transition flex items-center space-x-1.5 ${
-              activeSubCat === cat.id
-                ? 'bg-indigo-600 text-white shadow-sm'
-                : 'bg-white text-slate-600 border border-slate-200'
-            }`}
-          >
-            <span>{cat.icon}</span>
-            <span>{cat.label}</span>
-          </button>
-        ))}
-      </div>
-
-      {/* Filter Bar */}
-      <div className="flex items-center justify-between gap-2 bg-white p-2.5 rounded-2xl border border-slate-200 shadow-sm text-[11px]">
-        <label className="flex items-center space-x-1.5 cursor-pointer font-bold text-slate-700">
-          <input
-            type="checkbox"
-            checked={negotiableOnly}
-            onChange={(e) => setNegotiableOnly(e.target.checked)}
-            className="rounded text-indigo-600 focus:ring-0"
-          />
-          <span>Negotiable Only</span>
-        </label>
-
-        <div className="flex items-center space-x-1">
-          <select
-            value={selectedCondition}
-            onChange={(e) => setSelectedCondition(e.target.value)}
-            className="bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 font-bold text-slate-700 outline-none"
-          >
-            <option value="all">All Conditions</option>
-            <option value="like_new">Like New</option>
-            <option value="good">Good</option>
-            <option value="fair">Fair</option>
-          </select>
-
-          <select
-            value={sortOrder}
-            onChange={(e) => setSortOrder(e.target.value)}
-            className="bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 font-bold text-slate-700 outline-none"
-          >
-            <option value="newest">Newest</option>
-            <option value="low-to-high">₹ Low to High</option>
-            <option value="high-to-low">₹ High to Low</option>
-          </select>
+    <main className="p-3.5 space-y-3.5 relative z-10 animate-fade-in text-slate-800">
+      {/* 1. TOP HEADER & BACK NAVIGATION */}
+      <div className="bg-white/85 backdrop-blur-md p-3.5 rounded-2xl border border-slate-200/80 shadow-sm flex items-center justify-between">
+        <div>
+          <h2 className="text-sm font-black text-slate-900 capitalize leading-tight">
+            {selectedSubCategory !== 'all' ? selectedSubCategory : 'All Re-commerce Items'}
+          </h2>
+          <p className="text-[10px] text-slate-500">Verified pre-owned products in {selectedCity}</p>
         </div>
+        <button
+          type="button"
+          onClick={onBack}
+          className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-800 px-3 py-1.5 rounded-xl font-bold active:scale-95 transition cursor-pointer"
+        >
+          ← Categories
+        </button>
       </div>
 
-      {/* Items List */}
-      {filteredItems.length === 0 ? (
-        <div className="bg-white rounded-3xl p-8 text-center border border-slate-200 shadow-sm my-6">
-          <div className="text-3xl mb-2">📦</div>
-          <h4 className="text-sm font-black text-slate-800">No Used Items Found</h4>
-          <p className="text-xs text-slate-400 mt-1">Try resetting filters or expanding your search.</p>
+      {/* 2. FEED CONTAINER */}
+      {filtered.length === 0 ? (
+        <div className="bg-white/80 backdrop-blur-md rounded-2xl p-8 text-center border border-slate-200">
+          <span className="text-3xl">🛍️</span>
+          <p className="text-slate-600 font-bold text-xs mt-2">
+            Is category me abhi koi item listed nahi hai.
+          </p>
+          <button
+            type="button"
+            onClick={onBack}
+            className="mt-3 text-xs bg-slate-900 text-white px-3.5 py-2 rounded-xl font-bold cursor-pointer"
+          >
+            Explore Other Categories
+          </button>
         </div>
       ) : (
-        <div className="space-y-3">
-          {filteredItems.map((item) => {
-            const conditionMeta = RE_COMMERCE_CONDITIONS.find((c) => c.id === item.condition);
-            return (
-              <div
-                key={item.id}
-                className="bg-white rounded-3xl border border-slate-200/80 shadow-sm overflow-hidden flex flex-col transition hover:border-indigo-300"
-              >
-                {/* Photo & Badge Overlay */}
-                <div className="relative h-44 w-full bg-slate-100">
-                  <img
-                    src={item.images[0] || 'https://images.unsplash.com/photo-1581291518857-4e27b48ff24e?w=500&auto=format&fit=crop&q=60'}
-                    alt={item.title}
-                    className="w-full h-full object-cover"
-                    loading="lazy"
-                  />
-                  <div className="absolute top-2.5 left-2.5 flex flex-wrap gap-1">
-                    <span className={`text-[10px] font-black px-2 py-0.5 rounded-full shadow-sm ${conditionMeta?.badge}`}>
-                      {conditionMeta?.label.split(' ')[0]}
-                    </span>
-                    {item.isNegotiable && (
-                      <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-400 text-slate-950 shadow-sm">
-                        Negotiable
-                      </span>
-                    )}
-                  </div>
-                  <span className="absolute bottom-2.5 right-2.5 text-[10px] font-bold bg-black/60 backdrop-blur-md text-white px-2 py-0.5 rounded-lg">
-                    📍 {item.location}
+        filtered.map((item) => (
+          <article
+            key={item.id}
+            className="bg-white rounded-2xl overflow-hidden shadow-sm border border-slate-200 hover:shadow-md transition duration-200 space-y-3 p-3.5 relative"
+          >
+            {/* 📷 FULL-WIDTH PRODUCT HERO IMAGE WITH REELS-STYLE RIGHT OVERLAYS */}
+            <div className="relative h-56 w-full bg-slate-100 rounded-2xl overflow-hidden shadow-inner">
+              <img
+                src={item.image || 'https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?w=700'}
+                alt={item.title}
+                className="w-full h-full object-cover"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-slate-950/60 via-transparent to-transparent pointer-events-none"></div>
+
+              {/* Price & Condition Chips (Left Side) */}
+              <div className="absolute bottom-2.5 left-2.5 z-10 space-y-1">
+                <span className="inline-block text-sm font-black px-2.5 py-1 rounded-xl text-white bg-slate-950/85 backdrop-blur-md shadow-md border border-white/10">
+                  {item.price}
+                </span>
+                {item.condition && (
+                  <span className="block text-[9px] font-black px-2 py-0.5 rounded-lg text-slate-950 bg-amber-400 shadow-sm w-max">
+                    {item.condition}
                   </span>
-                </div>
-
-                {/* Card Content */}
-                <div className="p-3.5 space-y-2">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <h3 className="text-xs font-black text-slate-900 leading-snug line-clamp-1">{item.title}</h3>
-                      <div className="text-[10px] text-slate-400 mt-0.5 flex items-center space-x-2">
-                        <span>⏳ {item.ageMonths} mos old</span>
-                        <span>•</span>
-                        <span>{item.hasBillOrBox ? '📄 Bill/Box Available' : 'No Bill/Box'}</span>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-sm font-black text-emerald-600">{item.price}</div>
-                    </div>
-                  </div>
-
-                  <p className="text-[11px] text-slate-600 line-clamp-2 leading-relaxed bg-slate-50 p-2 rounded-xl">
-                    {item.description}
-                  </p>
-
-                  {/* Actions & Contact Bar */}
-                  <div className="pt-1 flex items-center justify-between gap-2 border-t border-slate-100">
-                    <div className="flex items-center space-x-1 text-[10px] text-slate-500 font-bold">
-                      <span>👤 {item.seller.name}</span>
-                      {item.seller.isVerified && <span className="text-indigo-600">✓</span>}
-                    </div>
-
-                    <div className="flex items-center space-x-1.5">
-                      <a
-                        href={`https://wa.me/91${item.seller.phone}?text=${encodeURIComponent(`Hi ${item.seller.name}, I am interested in your "${item.title}" listed for ${item.price} on TownHub.`)}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-[11px] font-black flex items-center space-x-1 shadow-sm active:scale-95 transition"
-                      >
-                        <span>💬</span>
-                        <span>WhatsApp</span>
-                      </a>
-                      <a
-                        href={`tel:${item.seller.phone}`}
-                        className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-[11px] font-black flex items-center space-x-1 active:scale-95 transition"
-                      >
-                        <span>📞</span>
-                        <span>Call</span>
-                      </a>
-                    </div>
-                  </div>
-                </div>
+                )}
               </div>
-            );
-          })}
-        </div>
+
+              {/* 🌟 REELS-STYLE FLOATING RIGHT-RAIL (🔥 Interested + 💬 Q&A With Auto-Focus) */}
+              <ListingDiscussionThread
+                listingId={item.id}
+                listingTitle={item.title}
+                sellerName={item.sellerName || 'Seller'}
+                sellerPhone={item.phone || item.whatsapp}
+                interestCount={item.interestCount || 4}
+                onNewNotification={onNewNotification}
+              />
+            </div>
+
+            {/* DETAILS */}
+            <div className="pt-0.5">
+              <div className="flex items-start justify-between">
+                <h3 className="font-black text-slate-900 text-sm leading-snug">
+                  {item.title}
+                </h3>
+                <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md shrink-0 ml-2">
+                  {item.sellerName || 'Verified Seller'}
+                </span>
+              </div>
+
+              {item.description && (
+                <p className="text-[11px] text-slate-600 mt-1 line-clamp-2 leading-relaxed">
+                  {item.description}
+                </p>
+              )}
+
+              <div className="flex items-center justify-between text-[10px] text-slate-500 font-semibold mt-2 pt-2 border-t border-slate-100">
+                <span>📍 {item.location || selectedCity}</span>
+                <span className="text-emerald-700 font-bold">{item.distance || '0.3 km away'}</span>
+              </div>
+            </div>
+
+            {/* DIRECT CALL & WHATSAPP ACTION BUTTONS */}
+            <ActionButtons
+              phone={item.phone || '9876543210'}
+              whatsapp={item.whatsapp || item.phone || '919876543210'}
+              message={`Namaste, I saw your listing for "${item.title}" on Town App. Is it still available?`}
+            />
+          </article>
+        ))
       )}
-    </div>
+    </main>
   );
 }

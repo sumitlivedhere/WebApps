@@ -31,6 +31,7 @@ export const initialReCommerceListings = [
     zone: 'Alwar - Central',
     lat: 27.5530,
     lng: 76.6346,
+    interestCount: 9,
     images: ['https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?w=600&auto=format&fit=crop&q=60'],
     seller: {
       name: 'Rahul Sharma',
@@ -55,6 +56,7 @@ export const initialReCommerceListings = [
     zone: 'Alwar - Station Rd',
     lat: 27.5684,
     lng: 76.6231,
+    interestCount: 15,
     images: ['https://images.unsplash.com/photo-1558981403-c5f9899a28bc?w=600&auto=format&fit=crop&q=60'],
     seller: {
       name: 'Mukesh Yadav',
@@ -79,6 +81,7 @@ export const initialReCommerceListings = [
     zone: 'Alwar - Moti Nagar',
     lat: 27.5450,
     lng: 76.6110,
+    interestCount: 19,
     images: ['https://images.unsplash.com/photo-1621905251189-08b45d6a269e?w=600&auto=format&fit=crop&q=60'],
     seller: {
       name: 'Sunil Kumar',
@@ -103,6 +106,7 @@ export const initialReCommerceListings = [
     zone: 'Alwar - Central',
     lat: 27.5530,
     lng: 76.6346,
+    interestCount: 29,
     images: ['https://images.unsplash.com/photo-1617806118233-18e1de247200?w=600&auto=format&fit=crop&q=60'],
     seller: {
       name: 'Pooja Verma',
