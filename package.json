@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
     "pwa:dev": "vite & npx open-cli http://localhost:5173 --app=\"Google Chrome\""
   },
   "dependencies": {

@@ -1,123 +1,120 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef, memo } from 'react';
 
-export default function VoiceSearchBar({
-  searchQuery,
+function VoiceSearchBar({
+  searchQuery = '',
   setSearchQuery,
   onSearchSubmit,
-  placeholder = 'Search across all town services, shops & items...',
+  placeholder = 'Search town services, products & listings...',
 }) {
   const [isListening, setIsListening] = useState(false);
-  const [selectedLang, setSelectedLang] = useState('hi-IN'); // Default Hindi (India)
-  const [listeningText, setListeningText] = useState('Sun rahe hain... Boliyega');
+  const [voiceSupported, setVoiceSupported] = useState(false);
+  const recognitionRef = useRef(null);
 
-  const startVoiceSearch = () => {
-    // Native Chrome / Web Speech API
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  useEffect(() => {
+    const SpeechRecognition =
+      window.SpeechRecognition || window.webkitSpeechRecognition;
 
-    if (!SpeechRecognition) {
-      alert("Voice input is not supported on this browser. Please open in Google Chrome on Mobile or PC.");
+    if (SpeechRecognition) {
+      setVoiceSupported(true);
+      const recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = true;
+      recognition.lang = 'hi-IN'; // Optimized for Tier-2 Indian town accents (Hinglish/Hindi)
+
+      recognition.onstart = () => {
+        setIsListening(true);
+      };
+
+      recognition.onresult = (event) => {
+        const transcript = Array.from(event.results)
+          .map((result) => result[0].transcript)
+          .join('');
+        setSearchQuery(transcript);
+        if (event.results[0].isFinal && onSearchSubmit) {
+          onSearchSubmit(transcript);
+        }
+      };
+
+      recognition.onerror = (event) => {
+        console.warn('Speech recognition error:', event.error);
+        setIsListening(false);
+      };
+
+      recognition.onend = () => {
+        setIsListening(false);
+      };
+
+      recognitionRef.current = recognition;
+    }
+  }, [setSearchQuery, onSearchSubmit]);
+
+  const toggleVoiceSearch = () => {
+    if (!voiceSupported) {
+      alert('Voice search is not supported on this browser. Try Chrome or Edge.');
       return;
     }
 
-    const recognition = new SpeechRecognition();
-    recognition.lang = selectedLang; 
-    recognition.interimResults = true;
-    recognition.continuous = false;
-
-    recognition.onstart = () => {
-      setIsListening(true);
-      setListeningText('Sun rahe hain... Boliyega (Listening...)');
-    };
-
-    recognition.onresult = (event) => {
-      const currentResult = Array.from(event.results)
-        .map((result) => result[0].transcript)
-        .join('');
-      
-      setSearchQuery(currentResult);
-    };
-
-    recognition.onerror = (event) => {
-      console.error("Voice Recognition Error:", event.error);
-      setIsListening(false);
-    };
-
-    recognition.onend = () => {
-      setIsListening(false);
-      if (searchQuery && onSearchSubmit) {
-        onSearchSubmit(searchQuery);
+    if (isListening) {
+      recognitionRef.current?.stop();
+    } else {
+      try {
+        recognitionRef.current?.start();
+      } catch (err) {
+        console.warn('Recognition start conflict:', err);
       }
-    };
+    }
+  };
 
-    recognition.start();
+  const handleClear = () => {
+    setSearchQuery('');
+    if (onSearchSubmit) onSearchSubmit('');
   };
 
   return (
-    <div className="w-full relative">
-      
-      {/* Search Input Box + Language Toggle + Mic */}
-      <div className="flex items-center bg-white rounded-2xl shadow-inner px-3 py-1.5 border border-slate-200">
-        
-        {/* Vernacular Language Selector Toggle */}
-        <select 
-          value={selectedLang}
-          onChange={(e) => setSelectedLang(e.target.value)}
-          className="text-xs bg-slate-100 font-bold text-slate-700 rounded-lg px-2 py-1 outline-none mr-2 cursor-pointer"
-        >
-          <option value="hi-IN">🇮🇳 हिंदी</option>
-          <option value="en-IN">🗣️ Hinglish</option>
-        </select>
+    <div className="relative w-full flex items-center">
+      {/* 🔍 SEARCH ICON */}
+      <span className="absolute left-3.5 text-slate-400 text-sm pointer-events-none">
+        🔍
+      </span>
 
-        {/* Text Input */}
-        <input
-          type="text"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder={placeholder}
-          className="w-full pl-9 pr-10 py-2.5 bg-white/95 rounded-2xl text-xs text-slate-900 placeholder-slate-400 font-bold focus:outline-none focus:ring-2 focus:ring-amber-400 shadow-inner truncate"
-        />
+      {/* ⌨️ INPUT FIELD */}
+      <input
+        type="text"
+        value={searchQuery}
+        onChange={(e) => setSearchQuery(e.target.value)}
+        onKeyDown={(e) => e.key === 'Enter' && onSearchSubmit && onSearchSubmit(searchQuery)}
+        placeholder={placeholder}
+        className="w-full pl-10 pr-20 py-2.5 bg-white/95 text-slate-900 placeholder:text-slate-400 font-semibold text-xs rounded-2xl border border-white/20 shadow-inner focus:outline-none focus:ring-2 focus:ring-amber-400 focus:bg-white transition"
+      />
 
-        {/* Clear Button */}
+      {/* RIGHT ACTIONS: CLEAR & VOICE MIC */}
+      <div className="absolute right-2 flex items-center space-x-1">
         {searchQuery && (
-          <button 
+          <button
             type="button"
-            onClick={() => setSearchQuery('')}
-            className="text-slate-400 hover:text-slate-600 text-xs px-1 mr-1 font-bold"
+            onClick={handleClear}
+            className="w-6 h-6 rounded-full bg-slate-200 hover:bg-slate-300 text-slate-600 flex items-center justify-center text-xs font-bold transition cursor-pointer"
+            title="Clear search"
           >
             ✕
           </button>
         )}
 
-        {/* Mic Button */}
-        <button 
+        <button
           type="button"
-          onClick={startVoiceSearch}
-          className={`p-2 rounded-full flex items-center justify-center transition-all ${
-            isListening 
-              ? 'bg-rose-600 text-white animate-pulse shadow-lg ring-4 ring-rose-200' 
-              : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm'
+          onClick={toggleVoiceSearch}
+          className={`p-1.5 rounded-full flex items-center justify-center transition-all cursor-pointer ${
+            isListening
+              ? 'bg-rose-500 text-white animate-pulse shadow-md scale-110'
+              : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
           }`}
-          title="Tap & Speak in Vernacular"
+          title={isListening ? 'Listening...' : 'Search with voice (बोलकर खोजें)'}
         >
-          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-            <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
-            <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
-          </svg>
+          <span className="text-sm">{isListening ? '🎙️' : '🎤'}</span>
         </button>
-
       </div>
-
-      {/* Pulsating Banner when User Speaks */}
-      {isListening && (
-        <div className="absolute left-0 right-0 top-14 bg-rose-700 text-white text-xs font-semibold p-3 rounded-xl shadow-xl flex items-center justify-between z-30 animate-bounce">
-          <div className="flex items-center space-x-2">
-            <span className="w-2.5 h-2.5 bg-white rounded-full animate-ping"></span>
-            <span>{listeningText}</span>
-          </div>
-          <span className="text-[10px] bg-rose-900/60 px-2 py-0.5 rounded-full">Say query now</span>
-        </div>
-      )}
-
     </div>
   );
 }
+
+export default memo(VoiceSearchBar);

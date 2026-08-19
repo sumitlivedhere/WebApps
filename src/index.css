@@ -24,6 +24,12 @@
   animation: wiggle-subtle 4.5s ease-in-out infinite;
 }
 
+/* Skip off-screen paint & layout computation */
+.feed-card-contain {
+  content-visibility: auto;
+  contain-intrinsic-size: 0 380px;
+}
+
 @keyframes bell-ring {
   0%, 100% { transform: rotate(0deg); }
   10%, 30% { transform: rotate(14deg); }

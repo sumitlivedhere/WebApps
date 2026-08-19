@@ -1,7 +1,12 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, memo } from 'react';
 import { createPortal } from 'react-dom';
+import {
+  hyperlocalStore,
+  useThreadSlice,
+  useInterestSlice,
+} from '../../store/hyperlocalStore';
 
-export default function ListingDiscussionThread({
+function ListingDiscussionThread({
   listingId,
   sellerPhone,
   sellerName,
@@ -11,24 +16,23 @@ export default function ListingDiscussionThread({
   onNewNotification,
 }) {
   const [isOpen, setIsOpen] = useState(false);
-  const [comments, setComments] = useState(initialComments);
-  const [interests, setInterests] = useState(interestCount);
   const [hasExpressedInterest, setHasExpressedInterest] = useState(false);
-  
   const [newQuestion, setNewQuestion] = useState('');
   const [replyText, setReplyText] = useState({});
   const [activeReplyId, setActiveReplyId] = useState(null);
   const [isCurrentUserSeller, setIsCurrentUserSeller] = useState(false);
 
-  // Focus references
+  // Direct O(1) Atomic Store Slices
+  const comments = useThreadSlice(listingId, initialComments);
+  const interests = useInterestSlice(listingId, interestCount);
+
+  // Synchronous Input Focus References
   const questionInputRef = useRef(null);
   const replyInputRef = useRef(null);
 
-  // 1. Direct tap triggers focus synchronously to force virtual keyboard open
   const handleOpenDiscussion = (e) => {
     e.stopPropagation();
     setIsOpen(true);
-    // Force focus in the event tick for mobile soft keyboard popup
     setTimeout(() => {
       if (questionInputRef.current) {
         questionInputRef.current.focus();
@@ -48,14 +52,14 @@ export default function ListingDiscussionThread({
   const handleExpressInterest = (e) => {
     e.stopPropagation();
     if (!hasExpressedInterest) {
-      setInterests((prev) => prev + 1);
+      hyperlocalStore.incrementInterest(listingId, interestCount);
       setHasExpressedInterest(true);
 
       if (onNewNotification) {
         onNewNotification({
           id: Date.now(),
           tag: '🔥 New Interest',
-          title: `Someone is interested in "${listingTitle || 'your item'}"`,
+          title: `Someone is interested in "${listingTitle || 'your listing'}"`,
           message: 'A local buyer has saved and shown interest in this item.',
           time: 'Just now',
           isRead: false,
@@ -64,7 +68,6 @@ export default function ListingDiscussionThread({
     }
   };
 
-  // 2. Buyer submits a question
   const handlePostQuestion = (e) => {
     e.preventDefault();
     if (!newQuestion.trim()) return;
@@ -80,7 +83,7 @@ export default function ListingDiscussionThread({
       sellerReply: null,
     };
 
-    setComments((prev) => [newCommentObj, ...prev]);
+    hyperlocalStore.addThreadComment(listingId, newCommentObj);
     setNewQuestion('');
 
     if (onNewNotification) {
@@ -95,26 +98,18 @@ export default function ListingDiscussionThread({
     }
   };
 
-  // 3. Seller posts official reply
   const handlePostSellerReply = (commentId) => {
     const reply = replyText[commentId];
     if (!reply || !reply.trim()) return;
 
     const cleanReply = reply.trim();
-    setComments((prev) =>
-      prev.map((c) =>
-        c.id === commentId
-          ? {
-              ...c,
-              sellerReply: {
-                text: cleanReply,
-                timestamp: 'Just now',
-                sellerName: sellerName || 'Verified Seller',
-              },
-            }
-          : c
-      )
-    );
+    const replyObj = {
+      text: cleanReply,
+      timestamp: 'Just now',
+      sellerName: sellerName || 'Verified Seller',
+    };
+
+    hyperlocalStore.addSellerReply(listingId, commentId, replyObj);
 
     if (onNewNotification) {
       onNewNotification({
@@ -132,16 +127,13 @@ export default function ListingDiscussionThread({
   };
 
   const handleToggleVisibility = (commentId) => {
-    setComments((prev) =>
-      prev.map((c) => (c.id === commentId ? { ...c, isPublic: !c.isPublic } : c))
-    );
+    hyperlocalStore.toggleCommentVisibility(listingId, commentId);
   };
 
   return (
     <>
       {/* 🌟 1. REELS-STYLE FLOATING RIGHT-RAIL OVERLAY */}
       <div className="absolute right-2.5 bottom-3 z-20 flex flex-col items-center space-y-2.5">
-        {/* FIRE / INTEREST BUTTON */}
         <button
           type="button"
           onClick={handleExpressInterest}
@@ -156,7 +148,6 @@ export default function ListingDiscussionThread({
           <span className="text-[9px] font-black leading-none mt-0.5">{interests}</span>
         </button>
 
-        {/* DISCUSSION / Q&A BUTTON */}
         <button
           type="button"
           onClick={handleOpenDiscussion}
@@ -168,7 +159,7 @@ export default function ListingDiscussionThread({
         </button>
       </div>
 
-      {/* 🌟 2. PORTALED BOTTOM SHEET DRAWER (Rendered into document.body for zero layout conflicts) */}
+      {/* 🌟 2. PORTALED BOTTOM SHEET DRAWER */}
       {isOpen &&
         createPortal(
           <div
@@ -197,7 +188,7 @@ export default function ListingDiscussionThread({
                   <button
                     type="button"
                     onClick={() => setIsCurrentUserSeller(!isCurrentUserSeller)}
-                    className={`text-[9px] font-black px-2.5 py-1 rounded-xl border transition ${
+                    className={`text-[9px] font-black px-2.5 py-1 rounded-xl border transition cursor-pointer ${
                       isCurrentUserSeller
                         ? 'bg-amber-400 text-slate-950 border-amber-300 shadow-sm'
                         : 'bg-white/10 text-slate-300 border-white/20'
@@ -243,7 +234,7 @@ export default function ListingDiscussionThread({
                               <button
                                 type="button"
                                 onClick={() => handleToggleVisibility(comm.id)}
-                                className="text-[9px] font-black px-1.5 py-0.5 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-md"
+                                className="text-[9px] font-black px-1.5 py-0.5 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-md cursor-pointer"
                               >
                                 {comm.isPublic ? '🌐 Public' : '🔒 Private'}
                               </button>
@@ -255,7 +246,6 @@ export default function ListingDiscussionThread({
                           {comm.text}
                         </p>
 
-                        {/* SELLER OFFICIAL REPLY (IF PRESENT) */}
                         {comm.sellerReply && (
                           <div className="ml-2.5 p-2.5 bg-indigo-50/80 border-l-3 border-indigo-600 rounded-r-xl space-y-1">
                             <div className="flex items-center justify-between">
@@ -270,7 +260,6 @@ export default function ListingDiscussionThread({
                           </div>
                         )}
 
-                        {/* SELLER REPLY COMPONENT */}
                         {isCurrentUserSeller && !comm.sellerReply && (
                           <div className="pt-1 border-t border-slate-200/60 mt-1">
                             {activeReplyId === comm.id ? (
@@ -337,3 +326,5 @@ export default function ListingDiscussionThread({
     </>
   );
 }
+
+export default memo(ListingDiscussionThread);
