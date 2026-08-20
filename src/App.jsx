@@ -1,88 +1,170 @@
-import React, { useState, useMemo } from 'react';
-import {
-  useStoreSlice,
-  useNotificationSlice,
-  hyperlocalStore,
-} from './store/hyperlocalStore';
+import React, { useState, useMemo, useRef, lazy, Suspense } from 'react';
+import { useNotificationSlice, hyperlocalStore } from './store/hyperlocalStore';
 
-// Top-Level Screen Components
+// Instant Critical Screens
 import HyperlocalHomeFeed from './HyperlocalHomeFeed';
-import ProviderDashboard from './ProviderDashboard';
 import NotificationCenter from './components/NotificationCenter';
 import ContextualListingModal from './components/ContextualListingModal';
 
-// Sector Hub Components
-import CategoryHub from './categories/CategoryHub';
-import TownHubView from './categories/TownHubView';
-import VehicleHub from './categories/VehicleHub';
-import PropertyHub from './categories/PropertyHub';
-import ElectronicsHub from './categories/ElectronicsHub';
-import FashionHub from './categories/FashionHub';
-import FurnitureHub from './categories/FurnitureHub';
-import KaarigarHub from './categories/KaarigarHub';
-import TransporterHub from './categories/TransporterHub';
-import WhiteCollarHub from './categories/WhiteCollarHub';
-import EducationHub from './categories/EducationHub';
-import RestaurantsHub from './categories/RestaurantsHub';
-import MallsHub from './categories/MallsHub';
-import ShaadiHub from './categories/ShaadiHub';
-import ConstructionHub from './categories/ConstructionHub';
-import AdvertisingHub from './categories/AdvertisingHub';
-import CommunityHub from './categories/CommunityHub';
-import MarketHub from './categories/MarketHub';
-import ReCommerceHub from './categories/ReCommerceHub';
+// Code-Split Lazy Loaded Hubs & Feeds
+const SurpriseFeed = lazy(() => import('./components/SurpriseFeed'));
+const ProviderDashboard = lazy(() => import('./ProviderDashboard'));
+const TownHubView = lazy(() => import('./categories/TownHubView'));
+const PropertyHub = lazy(() => import('./categories/PropertyHub'));
+const VehicleHub = lazy(() => import('./categories/VehicleHub'));
+const ElectronicsHub = lazy(() => import('./categories/ElectronicsHub'));
+const FashionHub = lazy(() => import('./categories/FashionHub'));
+const FurnitureHub = lazy(() => import('./categories/FurnitureHub'));
+const KaarigarHub = lazy(() => import('./categories/KaarigarHub'));
+const TransporterHub = lazy(() => import('./categories/TransporterHub'));
+const WhiteCollarHub = lazy(() => import('./categories/WhiteCollarHub'));
+const EducationHub = lazy(() => import('./categories/EducationHub'));
+const RestaurantsHub = lazy(() => import('./categories/RestaurantsHub'));
+const MallsHub = lazy(() => import('./categories/MallsHub'));
+const ShaadiHub = lazy(() => import('./categories/ShaadiHub'));
+const ConstructionHub = lazy(() => import('./categories/ConstructionHub'));
+const AdvertisingHub = lazy(() => import('./categories/AdvertisingHub'));
+const CommunityHub = lazy(() => import('./categories/CommunityHub'));
+const MarketHub = lazy(() => import('./categories/MarketHub'));
+const ReCommerceHub = lazy(() => import('./categories/ReCommerceHub'));
 
-// Feed Components
-import ListingsFeed from './components/ListingsFeed';
-import KaarigarWorkerList from './components/KaarigarWorkerList';
-import TransporterFeed from './components/TransporterFeed';
-import WhiteCollarFeed from './components/WhiteCollarFeed';
-import EducationFeed from './components/EducationFeed';
-import RestaurantsFeed from './components/RestaurantsFeed';
-import MallsFeed from './components/MallsFeed';
-import ShaadiFeed from './components/ShaadiFeed';
-import ConstructionFeed from './components/ConstructionFeed';
-import AdvertisingFeed from './components/AdvertisingFeed';
-import CommunityFeed from './components/CommunityFeed';
-import MarketFeed from './components/MarketFeed';
-import ReCommerceFeed from './components/recommerce/ReCommerceFeed';
+const ListingsFeed = lazy(() => import('./components/ListingsFeed'));
+const KaarigarWorkerList = lazy(() => import('./components/KaarigarWorkerList'));
+const TransporterFeed = lazy(() => import('./components/TransporterFeed'));
+const WhiteCollarFeed = lazy(() => import('./components/WhiteCollarFeed'));
+const EducationFeed = lazy(() => import('./components/EducationFeed'));
+const RestaurantsFeed = lazy(() => import('./components/RestaurantsFeed'));
+const MallsFeed = lazy(() => import('./components/MallsFeed'));
+const ShaadiFeed = lazy(() => import('./components/ShaadiFeed'));
+const ConstructionFeed = lazy(() => import('./components/ConstructionFeed'));
+const AdvertisingFeed = lazy(() => import('./components/AdvertisingFeed'));
+const CommunityFeed = lazy(() => import('./components/CommunityFeed'));
+const MarketFeed = lazy(() => import('./components/MarketFeed'));
+const ReCommerceFeed = lazy(() => import('./components/recommerce/ReCommerceFeed'));
+
+function ScreenSkeleton() {
+  return (
+    <div className="p-4 space-y-3 animate-pulse">
+      <div className="h-20 bg-slate-900/80 rounded-2xl"></div>
+      <div className="h-44 bg-slate-900/60 rounded-2xl"></div>
+      <div className="h-44 bg-slate-900/60 rounded-2xl"></div>
+    </div>
+  );
+}
+
+const INITIAL_NAV_STATE = {
+  screen: 'home',
+  category: 'property',
+  subCategory: 'all',
+  searchQuery: '',
+};
 
 export default function App() {
-  const [currentScreen, setCurrentScreen] = useState('home');
+  const [history, setHistory] = useState([INITIAL_NAV_STATE]);
+  const [historyIndex, setHistoryIndex] = useState(0);
   const [selectedCity, setSelectedCity] = useState('Alwar');
-  const [selectedCategory, setSelectedCategory] = useState('property');
-  const [selectedSubCategory, setSelectedSubCategory] = useState('all');
-  const [searchQuery, setSearchQuery] = useState('');
+
   const [isListingModalOpen, setIsListingModalOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
 
-  // ⚡ Live Reactive Store Subscriptions
-  const listings = useStoreSlice('listings');
-  const marketProducts = useStoreSlice('marketProducts');
-  const kaarigarWorkers = useStoreSlice('kaarigarWorkers');
-  const transportFirms = useStoreSlice('transportFirms');
-  const individualTransporters = useStoreSlice('individualTransporters');
-  const communityDrives = useStoreSlice('communityDrives');
-  const shaadiVendors = useStoreSlice('shaadiVendors');
-  const advertisingProviders = useStoreSlice('advertisingProviders');
-  const educationListings = useStoreSlice('educationListings');
-  const constructionListings = useStoreSlice('constructionListings');
-  const mallsStores = useStoreSlice('mallsStores');
-  const restaurantsList = useStoreSlice('restaurantsList');
-  const whiteCollarListings = useStoreSlice('whiteCollarListings');
-  const reCommerceListings = useStoreSlice('reCommerceListings');
-  const notifications = useNotificationSlice();
+  // Swipe Gesture Tracking Refs
+  const touchStartX = useRef(0);
+  const touchStartY = useRef(0);
+  const touchStartTime = useRef(0);
 
+  const currentNav = history[historyIndex] || INITIAL_NAV_STATE;
+  const {
+    screen: currentScreen,
+    category: selectedCategory,
+    subCategory: selectedSubCategory,
+    searchQuery,
+  } = currentNav;
+
+  const notifications = useNotificationSlice();
   const unreadNotifCount = useMemo(
     () => (notifications || []).filter((n) => !n.read).length,
     [notifications]
   );
 
-  const handleOpenCategory = (categoryId, subCategory = 'all') => {
-    setSelectedCategory(categoryId);
-    setSelectedSubCategory(subCategory);
+  const navigateTo = (updates) => {
+    const nextState = {
+      screen: updates.screen !== undefined ? updates.screen : currentScreen,
+      category: updates.category !== undefined ? updates.category : selectedCategory,
+      subCategory: updates.subCategory !== undefined ? updates.subCategory : selectedSubCategory,
+      searchQuery: updates.searchQuery !== undefined ? updates.searchQuery : searchQuery,
+    };
 
-    const hubMapping = {
+    if (
+      nextState.screen === currentScreen &&
+      nextState.category === selectedCategory &&
+      nextState.subCategory === selectedSubCategory &&
+      nextState.searchQuery === searchQuery
+    ) {
+      return;
+    }
+
+    setHistory((prev) => {
+      const branchCut = prev.slice(0, historyIndex + 1);
+      return [...branchCut, nextState];
+    });
+    setHistoryIndex((prev) => prev + 1);
+  };
+
+  const canGoBack = historyIndex > 0;
+  const canGoForward = historyIndex < history.length - 1;
+
+  const goBack = () => {
+    if (canGoBack) setHistoryIndex((prev) => prev - 1);
+  };
+
+  const goForward = () => {
+    if (canGoForward) setHistoryIndex((prev) => prev + 1);
+  };
+
+  // 🌟 TOUCH SWIPE GESTURE HANDLERS
+  const handleTouchStart = (e) => {
+    if (isListingModalOpen || isNotificationsOpen) return;
+    touchStartX.current = e.changedTouches[0].clientX;
+    touchStartY.current = e.changedTouches[0].clientY;
+    touchStartTime.current = Date.now();
+  };
+
+  const handleTouchEnd = (e) => {
+    if (isListingModalOpen || isNotificationsOpen) return;
+
+    // Ignore swipe if initiated inside horizontally scrollable elements (chips/carousels) or text fields
+    const target = e.target;
+    if (target.closest('.overflow-x-auto, input, textarea, select')) return;
+
+    const touchEndX = e.changedTouches[0].clientX;
+    const touchEndY = e.changedTouches[0].clientY;
+    const deltaX = touchEndX - touchStartX.current;
+    const deltaY = touchEndY - touchStartY.current;
+    const deltaTime = Date.now() - touchStartTime.current;
+
+    // Minimum distance: 60px, Horizontal dominant (X > 1.4 * Y), Duration: < 550ms
+    if (deltaTime < 550 && Math.abs(deltaX) > 60 && Math.abs(deltaX) > Math.abs(deltaY) * 1.4) {
+      if (deltaX > 0) {
+        // 👉 Swiped Right -> Step Back
+        if (canGoBack) goBack();
+      } else {
+        // 👈 Swiped Left -> Step Forward
+        if (canGoForward) goForward();
+      }
+    }
+  };
+
+  const handleOpenCategory = (catId, sub = 'all') => {
+    if (catId === 'surprise') {
+      navigateTo({
+        screen: 'surprise-feed',
+        category: 'surprise',
+        subCategory: 'all',
+      });
+      return;
+    }
+
+    const hubMap = {
       property: 'property-hub',
       vehicles: 'vehicle-hub',
       electronics: 'electronics-hub',
@@ -101,15 +183,15 @@ export default function App() {
       market: 'market-hub',
       recommerce: 'buysell-hub',
     };
-
-    setCurrentScreen(hubMapping[categoryId] || 'town-hub');
+    navigateTo({
+      screen: hubMap[catId] || 'town-hub',
+      category: catId,
+      subCategory: sub,
+    });
   };
 
-  const handleOpenFeed = (catId, subCatId) => {
-    setSelectedCategory(catId);
-    setSelectedSubCategory(subCatId);
-
-    const feedMapping = {
+  const handleOpenFeed = (catId, subId) => {
+    const feedMap = {
       property: 'listings',
       vehicles: 'listings',
       electronics: 'listings',
@@ -128,350 +210,412 @@ export default function App() {
       market: 'market-feed',
       recommerce: 'recommerce-feed',
     };
-
-    setCurrentScreen(feedMapping[catId] || 'listings');
-  };
-
-  const handleNewNotification = (newNotif) => {
-    hyperlocalStore.addNotification(newNotif);
+    navigateTo({
+      screen: feedMap[catId] || 'listings',
+      category: catId,
+      subCategory: subId,
+    });
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between max-w-md mx-auto relative shadow-2xl overflow-x-hidden font-sans select-none">
-      
-      {/* TOP GLOBAL BAR */}
-      <header className="sticky top-0 z-40 bg-slate-950/90 backdrop-blur-md px-3.5 py-2.5 border-b border-slate-800 flex items-center justify-between">
+    <div
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+      className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between max-w-md mx-auto relative shadow-2xl overflow-x-hidden font-sans select-none pb-24 touch-pan-y"
+    >
+      {/* 🌟 1. STICKY HEADER WITH STEP CONTROLS, CONDITIONAL "+ POST HERE" & NOTIFICATIONS */}
+      <header className="sticky top-0 z-40 bg-slate-950/90 backdrop-blur-md px-3 py-2 border-b border-slate-800 flex items-center justify-between shadow-md">
+        
+        {/* Left: Global Back & Forward Step Controller */}
+        <div className="flex items-center space-x-1.5 bg-slate-900/90 p-1 rounded-2xl border border-slate-800 shadow-inner shrink-0">
+          <button
+            type="button"
+            onClick={goBack}
+            disabled={!canGoBack}
+            title="Step Back (Swipe Right)"
+            className={`w-7 h-7 rounded-xl flex items-center justify-center font-black text-xs transition active:scale-90 ${
+              canGoBack
+                ? 'bg-slate-800 hover:bg-amber-400 hover:text-slate-950 text-amber-300 shadow-xs cursor-pointer'
+                : 'bg-slate-900 text-slate-600 cursor-not-allowed opacity-40'
+            }`}
+          >
+            ❮
+          </button>
+
+          <button
+            type="button"
+            onClick={goForward}
+            disabled={!canGoForward}
+            title="Step Forward (Swipe Left)"
+            className={`w-7 h-7 rounded-xl flex items-center justify-center font-black text-xs transition active:scale-90 ${
+              canGoForward
+                ? 'bg-slate-800 hover:bg-amber-400 hover:text-slate-950 text-amber-300 shadow-xs cursor-pointer'
+                : 'bg-slate-900 text-slate-600 cursor-not-allowed opacity-40'
+            }`}
+          >
+            ❯
+          </button>
+        </div>
+
+        {/* Center: Brand & Step Indicator */}
         <div
-          onClick={() => setCurrentScreen('home')}
-          className="flex items-center space-x-2 cursor-pointer active:scale-95 transition"
+          onClick={() => navigateTo({ screen: 'home' })}
+          className="flex items-center space-x-1.5 cursor-pointer active:scale-95 transition mx-1"
         >
-          <span className="text-xl">🏛️</span>
+          <span className="text-lg">🏛️</span>
           <div>
-            <h1 className="text-xs font-black tracking-wider text-amber-400 uppercase">
+            <h1 className="text-[11px] font-black tracking-wider text-amber-400 uppercase leading-none">
               TownHub • {selectedCity}
             </h1>
-            <p className="text-[9px] text-slate-400 font-semibold leading-none">
-              Hyperlocal Economy Engine
+            <p className="text-[8px] text-slate-400 font-semibold leading-none mt-0.5">
+              Step {historyIndex + 1} of {history.length}
             </p>
           </div>
         </div>
 
-        <div className="flex items-center space-x-2">
-          {/* Post Free Button */}
-          <button
-            type="button"
-            onClick={() => setIsListingModalOpen(true)}
-            className="px-2.5 py-1.5 bg-gradient-to-r from-amber-400 to-yellow-400 hover:from-amber-300 text-slate-950 font-black text-[11px] rounded-xl shadow-md active:scale-95 transition cursor-pointer flex items-center space-x-1"
-          >
-            <span>+</span>
-            <span>Post Free</span>
-          </button>
+        {/* Right Action Cluster */}
+        <div className="flex items-center space-x-1.5 shrink-0">
+          {/* Contextual "+ Post Here" Button (Hidden on Home & Provider Dashboard) */}
+          {currentScreen !== 'home' && currentScreen !== 'provider-dashboard' && (
+            <button
+              type="button"
+              onClick={() => setIsListingModalOpen(true)}
+              className="px-2.5 py-1.5 bg-gradient-to-r from-amber-400 to-yellow-400 hover:from-amber-300 text-slate-950 font-black text-[10px] rounded-xl shadow-md active:scale-95 transition cursor-pointer flex items-center space-x-1"
+              title="Post in this Category"
+            >
+              <span>+</span>
+              <span>Post Here</span>
+            </button>
+          )}
 
-          {/* Notifications Bell */}
+          {/* 🔔 Live Alerts Button */}
           <button
             type="button"
             onClick={() => setIsNotificationsOpen(true)}
-            className="w-8 h-8 rounded-xl bg-slate-800/80 hover:bg-slate-700 flex items-center justify-center relative cursor-pointer active:scale-90 transition"
+            className={`relative flex items-center justify-center w-8 h-8 rounded-xl transition cursor-pointer active:scale-90 border ${
+              unreadNotifCount > 0
+                ? 'bg-gradient-to-r from-amber-500/20 to-orange-500/20 border-amber-400/70 shadow-md shadow-amber-500/20'
+                : 'bg-slate-900/90 border-slate-800 hover:bg-slate-800 text-slate-300'
+            }`}
+            title="Open Town Alerts"
           >
-            <span className="text-sm">🔔</span>
+            <span className={`text-sm ${unreadNotifCount > 0 ? 'animate-bounce' : ''}`}>🔔</span>
+
             {unreadNotifCount > 0 && (
-              <span className="absolute -top-1 -right-1 w-4 h-4 bg-rose-600 text-white rounded-full text-[9px] font-black flex items-center justify-center animate-pulse">
-                {unreadNotifCount}
+              <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5 items-center justify-center">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                <span className="relative inline-flex items-center justify-center rounded-full h-3 w-3 bg-rose-600 text-[8px] font-black text-white">
+                  {unreadNotifCount}
+                </span>
               </span>
             )}
           </button>
         </div>
       </header>
 
-      {/* SCREEN ROUTER */}
-      <main className="flex-1 pb-20">
+      {/* 🌟 2. MAIN ACTIVE VIEW ROUTER */}
+      <main className="flex-1">
         {currentScreen === 'home' && (
           <HyperlocalHomeFeed
             selectedCity={selectedCity}
             onSelectCity={setSelectedCity}
             onSelectCategory={handleOpenCategory}
             searchQuery={searchQuery}
-            onSearchChange={setSearchQuery}
+            onSearchChange={(q) => navigateTo({ searchQuery: q })}
             onOpenPostModal={() => setIsListingModalOpen(true)}
           />
         )}
 
-        {currentScreen === 'provider-dashboard' && (
-          <ProviderDashboard
-            onBack={() => setCurrentScreen('home')}
-            onNewNotification={handleNewNotification}
-          />
-        )}
+        <Suspense fallback={<ScreenSkeleton />}>
+          {currentScreen === 'surprise-feed' && (
+            <SurpriseFeed
+              selectedCity={selectedCity}
+              searchQuery={searchQuery}
+              onBack={goBack}
+            />
+          )}
 
-        {/* SECTOR HUBS */}
-        {currentScreen === 'town-hub' && (
-          <TownHubView
-            category={selectedCategory}
-            selectedCity={selectedCity}
-            onSelectSubCategory={(sub) => handleOpenFeed(selectedCategory, sub)}
-            onBack={() => setCurrentScreen('home')}
-          />
-        )}
-        {currentScreen === 'property-hub' && (
-          <PropertyHub
-            selectedCity={selectedCity}
-            onSelectSubCategory={(sub) => handleOpenFeed('property', sub)}
-            onBack={() => setCurrentScreen('home')}
-          />
-        )}
-        {currentScreen === 'vehicle-hub' && (
-          <VehicleHub
-            selectedCity={selectedCity}
-            onSelectSubCategory={(sub) => handleOpenFeed('vehicles', sub)}
-            onBack={() => setCurrentScreen('home')}
-          />
-        )}
-        {currentScreen === 'electronics-hub' && (
-          <ElectronicsHub
-            selectedCity={selectedCity}
-            onSelectSubCategory={(sub) => handleOpenFeed('electronics', sub)}
-            onBack={() => setCurrentScreen('home')}
-          />
-        )}
-        {currentScreen === 'fashion-hub' && (
-          <FashionHub
-            selectedCity={selectedCity}
-            onSelectSubCategory={(sub) => handleOpenFeed('fashion', sub)}
-            onBack={() => setCurrentScreen('home')}
-          />
-        )}
-        {currentScreen === 'furniture-hub' && (
-          <FurnitureHub
-            selectedCity={selectedCity}
-            onSelectSubCategory={(sub) => handleOpenFeed('furniture', sub)}
-            onBack={() => setCurrentScreen('home')}
-          />
-        )}
-        {currentScreen === 'kaarigar-hub' && (
-          <KaarigarHub
-            selectedCity={selectedCity}
-            onSelectSubCategory={(sub) => handleOpenFeed('kaarigar', sub)}
-            onBack={() => setCurrentScreen('home')}
-          />
-        )}
-        {currentScreen === 'transporter-hub' && (
-          <TransporterHub
-            selectedCity={selectedCity}
-            onSelectSubCategory={(sub) => handleOpenFeed('transporters', sub)}
-            onBack={() => setCurrentScreen('home')}
-          />
-        )}
-        {currentScreen === 'white-collar-hub' && (
-          <WhiteCollarHub
-            selectedCity={selectedCity}
-            onSelectSubCategory={(sub) => handleOpenFeed('white-collar', sub)}
-            onBack={() => setCurrentScreen('home')}
-          />
-        )}
-        {currentScreen === 'education-hub' && (
-          <EducationHub
-            selectedCity={selectedCity}
-            onSelectSubCategory={(sub) => handleOpenFeed('education', sub)}
-            onBack={() => setCurrentScreen('home')}
-          />
-        )}
-        {currentScreen === 'restaurants-hub' && (
-          <RestaurantsHub
-            selectedCity={selectedCity}
-            onSelectSubCategory={(sub) => handleOpenFeed('restaurants', sub)}
-            onBack={() => setCurrentScreen('home')}
-          />
-        )}
-        {currentScreen === 'malls-hub' && (
-          <MallsHub
-            selectedCity={selectedCity}
-            onSelectSubCategory={(sub) => handleOpenFeed('malls', sub)}
-            onBack={() => setCurrentScreen('home')}
-          />
-        )}
-        {currentScreen === 'shaadi-hub' && (
-          <ShaadiHub
-            selectedCity={selectedCity}
-            onSelectSubCategory={(sub) => handleOpenFeed('shaadi', sub)}
-            onBack={() => setCurrentScreen('home')}
-          />
-        )}
-        {currentScreen === 'construction-hub' && (
-          <ConstructionHub
-            selectedCity={selectedCity}
-            onSelectSubCategory={(sub) => handleOpenFeed('construction', sub)}
-            onBack={() => setCurrentScreen('home')}
-          />
-        )}
-        {currentScreen === 'advertising-hub' && (
-          <AdvertisingHub
-            selectedCity={selectedCity}
-            onSelectSubCategory={(sub) => handleOpenFeed('advertising', sub)}
-            onBack={() => setCurrentScreen('home')}
-          />
-        )}
-        {currentScreen === 'community-hub' && (
-          <CommunityHub
-            selectedCity={selectedCity}
-            onSelectSubCategory={(sub) => handleOpenFeed('community', sub)}
-            onBack={() => setCurrentScreen('home')}
-          />
-        )}
-        {currentScreen === 'market-hub' && (
-          <MarketHub
-            selectedCity={selectedCity}
-            onSelectSubCategory={(sub) => handleOpenFeed('market', sub)}
-            onBack={() => setCurrentScreen('home')}
-          />
-        )}
-        {currentScreen === 'buysell-hub' && (
-          <ReCommerceHub
-            selectedCity={selectedCity}
-            onSelectSubCategory={(sub) => handleOpenFeed('recommerce', sub)}
-            onBack={() => setCurrentScreen('home')}
-          />
-        )}
+          {currentScreen === 'provider-dashboard' && (
+            <ProviderDashboard onBack={goBack} />
+          )}
 
-        {/* FEED SCREENS */}
-        {currentScreen === 'listings' && (
-          <ListingsFeed
-            listings={listings}
-            selectedCategory={selectedCategory}
-            selectedSubCategory={selectedSubCategory}
-            selectedCity={selectedCity}
-            searchQuery={searchQuery}
-            onBack={() => setCurrentScreen('home')}
-            onNewNotification={handleNewNotification}
-          />
-        )}
-        {currentScreen === 'kaarigar-feed' && (
-          <KaarigarWorkerList
-            workers={kaarigarWorkers}
-            selectedSubCategory={selectedSubCategory}
-            selectedCity={selectedCity}
-            searchQuery={searchQuery}
-            onBack={() => setCurrentScreen('kaarigar-hub')}
-            onNewNotification={handleNewNotification}
-          />
-        )}
-        {currentScreen === 'transporter-feed' && (
-          <TransporterFeed
-            individualTransporters={individualTransporters}
-            transportFirms={transportFirms}
-            selectedSubCategory={selectedSubCategory}
-            selectedCity={selectedCity}
-            searchQuery={searchQuery}
-            onBack={() => setCurrentScreen('transporter-hub')}
-            onNewNotification={handleNewNotification}
-          />
-        )}
-        {currentScreen === 'white-collar-feed' && (
-          <WhiteCollarFeed
-            listings={whiteCollarListings}
-            selectedSubCategory={selectedSubCategory}
-            selectedCity={selectedCity}
-            searchQuery={searchQuery}
-            onBack={() => setCurrentScreen('white-collar-hub')}
-            onNewNotification={handleNewNotification}
-          />
-        )}
-        {currentScreen === 'education-feed' && (
-          <EducationFeed
-            listings={educationListings}
-            selectedSubCategory={selectedSubCategory}
-            selectedCity={selectedCity}
-            searchQuery={searchQuery}
-            onBack={() => setCurrentScreen('education-hub')}
-            onNewNotification={handleNewNotification}
-          />
-        )}
-        {currentScreen === 'restaurants-feed' && (
-          <RestaurantsFeed
-            restaurants={restaurantsList}
-            selectedSubCategory={selectedSubCategory}
-            selectedCity={selectedCity}
-            searchQuery={searchQuery}
-            onBack={() => setCurrentScreen('restaurants-hub')}
-            onNewNotification={handleNewNotification}
-          />
-        )}
-        {currentScreen === 'malls-feed' && (
-          <MallsFeed
-            stores={mallsStores}
-            selectedSubCategory={selectedSubCategory}
-            selectedCity={selectedCity}
-            searchQuery={searchQuery}
-            onBack={() => setCurrentScreen('malls-hub')}
-            onNewNotification={handleNewNotification}
-          />
-        )}
-        {currentScreen === 'shaadi-feed' && (
-          <ShaadiFeed
-            vendors={shaadiVendors}
-            selectedSubCategory={selectedSubCategory}
-            selectedCity={selectedCity}
-            searchQuery={searchQuery}
-            onBack={() => setCurrentScreen('shaadi-hub')}
-            onNewNotification={handleNewNotification}
-          />
-        )}
-        {currentScreen === 'construction-feed' && (
-          <ConstructionFeed
-            listings={constructionListings}
-            selectedSubCategory={selectedSubCategory}
-            selectedCity={selectedCity}
-            searchQuery={searchQuery}
-            onBack={() => setCurrentScreen('construction-hub')}
-            onNewNotification={handleNewNotification}
-          />
-        )}
-        {currentScreen === 'advertising-feed' && (
-          <AdvertisingFeed
-            providers={advertisingProviders}
-            selectedSubCategory={selectedSubCategory}
-            selectedCity={selectedCity}
-            searchQuery={searchQuery}
-            onBack={() => setCurrentScreen('advertising-hub')}
-            onNewNotification={handleNewNotification}
-          />
-        )}
-        {currentScreen === 'community-feed' && (
-          <CommunityFeed
-            drives={communityDrives}
-            selectedSubCategory={selectedSubCategory}
-            selectedCity={selectedCity}
-            searchQuery={searchQuery}
-            onBack={() => setCurrentScreen('community-hub')}
-            onNewNotification={handleNewNotification}
-          />
-        )}
-        {currentScreen === 'market-feed' && (
-          <MarketFeed
-            products={marketProducts}
-            selectedSubCategory={selectedSubCategory}
-            selectedCity={selectedCity}
-            searchQuery={searchQuery}
-            onBack={() => setCurrentScreen('market-hub')}
-            onNewNotification={handleNewNotification}
-          />
-        )}
-        {currentScreen === 'recommerce-feed' && (
-          <ReCommerceFeed
-            listings={reCommerceListings}
-            selectedSubCategory={selectedSubCategory}
-            selectedCity={selectedCity}
-            searchQuery={searchQuery}
-            onBack={() => setCurrentScreen('buysell-hub')}
-            onNewNotification={handleNewNotification}
-          />
-        )}
+          {currentScreen === 'town-hub' && (
+            <TownHubView
+              category={selectedCategory}
+              selectedCity={selectedCity}
+              onSelectSubCategory={(sub) => handleOpenFeed(selectedCategory, sub)}
+              onBack={goBack}
+            />
+          )}
+          {currentScreen === 'property-hub' && (
+            <PropertyHub
+              selectedCity={selectedCity}
+              onSelectSubCategory={(sub) => handleOpenFeed('property', sub)}
+              onBack={goBack}
+            />
+          )}
+          {currentScreen === 'vehicle-hub' && (
+            <VehicleHub
+              selectedCity={selectedCity}
+              onSelectSubCategory={(sub) => handleOpenFeed('vehicles', sub)}
+              onBack={goBack}
+            />
+          )}
+          {currentScreen === 'electronics-hub' && (
+            <ElectronicsHub
+              selectedCity={selectedCity}
+              onSelectSubCategory={(sub) => handleOpenFeed('electronics', sub)}
+              onBack={goBack}
+            />
+          )}
+          {currentScreen === 'fashion-hub' && (
+            <FashionHub
+              selectedCity={selectedCity}
+              onSelectSubCategory={(sub) => handleOpenFeed('fashion', sub)}
+              onBack={goBack}
+            />
+          )}
+          {currentScreen === 'furniture-hub' && (
+            <FurnitureHub
+              selectedCity={selectedCity}
+              onSelectSubCategory={(sub) => handleOpenFeed('furniture', sub)}
+              onBack={goBack}
+            />
+          )}
+          {currentScreen === 'kaarigar-hub' && (
+            <KaarigarHub
+              selectedCity={selectedCity}
+              onSelectSubCategory={(sub) => handleOpenFeed('kaarigar', sub)}
+              onBack={goBack}
+            />
+          )}
+          {currentScreen === 'transporter-hub' && (
+            <TransporterHub
+              selectedCity={selectedCity}
+              onSelectSubCategory={(sub) => handleOpenFeed('transporters', sub)}
+              onBack={goBack}
+            />
+          )}
+          {currentScreen === 'white-collar-hub' && (
+            <WhiteCollarHub
+              selectedCity={selectedCity}
+              onSelectSubCategory={(sub) => handleOpenFeed('white-collar', sub)}
+              onBack={goBack}
+            />
+          )}
+          {currentScreen === 'education-hub' && (
+            <EducationHub
+              selectedCity={selectedCity}
+              onSelectSubCategory={(sub) => handleOpenFeed('education', sub)}
+              onBack={goBack}
+            />
+          )}
+          {currentScreen === 'restaurants-hub' && (
+            <RestaurantsHub
+              selectedCity={selectedCity}
+              onSelectSubCategory={(sub) => handleOpenFeed('restaurants', sub)}
+              onBack={goBack}
+            />
+          )}
+          {currentScreen === 'malls-hub' && (
+            <MallsHub
+              selectedCity={selectedCity}
+              onSelectSubCategory={(sub) => handleOpenFeed('malls', sub)}
+              onBack={goBack}
+            />
+          )}
+          {currentScreen === 'shaadi-hub' && (
+            <ShaadiHub
+              selectedCity={selectedCity}
+              onSelectSubCategory={(sub) => handleOpenFeed('shaadi', sub)}
+              onBack={goBack}
+            />
+          )}
+          {currentScreen === 'construction-hub' && (
+            <ConstructionHub
+              selectedCity={selectedCity}
+              onSelectSubCategory={(sub) => handleOpenFeed('construction', sub)}
+              onBack={goBack}
+            />
+          )}
+          {currentScreen === 'advertising-hub' && (
+            <AdvertisingHub
+              selectedCity={selectedCity}
+              onSelectSubCategory={(sub) => handleOpenFeed('advertising', sub)}
+              onBack={goBack}
+            />
+          )}
+          {currentScreen === 'community-hub' && (
+            <CommunityHub
+              selectedCity={selectedCity}
+              onSelectSubCategory={(sub) => handleOpenFeed('community', sub)}
+              onBack={goBack}
+            />
+          )}
+          {currentScreen === 'market-hub' && (
+            <MarketHub
+              selectedCity={selectedCity}
+              onSelectSubCategory={(sub) => handleOpenFeed('market', sub)}
+              onBack={goBack}
+            />
+          )}
+          {currentScreen === 'buysell-hub' && (
+            <ReCommerceHub
+              selectedCity={selectedCity}
+              onSelectSubCategory={(sub) => handleOpenFeed('recommerce', sub)}
+              onBack={goBack}
+            />
+          )}
+
+          {/* Feeds */}
+          {currentScreen === 'listings' && (
+            <ListingsFeed
+              selectedCategory={selectedCategory}
+              selectedSubCategory={selectedSubCategory}
+              selectedCity={selectedCity}
+              searchQuery={searchQuery}
+              onBack={goBack}
+            />
+          )}
+          {currentScreen === 'kaarigar-feed' && (
+            <KaarigarWorkerList
+              selectedSubCategory={selectedSubCategory}
+              selectedCity={selectedCity}
+              searchQuery={searchQuery}
+              onBack={goBack}
+            />
+          )}
+          {currentScreen === 'transporter-feed' && (
+            <TransporterFeed
+              selectedSubCategory={selectedSubCategory}
+              selectedCity={selectedCity}
+              searchQuery={searchQuery}
+              onBack={goBack}
+            />
+          )}
+          {currentScreen === 'white-collar-feed' && (
+            <WhiteCollarFeed
+              selectedSubCategory={selectedSubCategory}
+              selectedCity={selectedCity}
+              searchQuery={searchQuery}
+              onBack={goBack}
+            />
+          )}
+          {currentScreen === 'education-feed' && (
+            <EducationFeed
+              selectedSubCategory={selectedSubCategory}
+              selectedCity={selectedCity}
+              searchQuery={searchQuery}
+              onBack={goBack}
+            />
+          )}
+          {currentScreen === 'restaurants-feed' && (
+            <RestaurantsFeed
+              selectedSubCategory={selectedSubCategory}
+              selectedCity={selectedCity}
+              searchQuery={searchQuery}
+              onBack={goBack}
+            />
+          )}
+          {currentScreen === 'malls-feed' && (
+            <MallsFeed
+              selectedSubCategory={selectedSubCategory}
+              selectedCity={selectedCity}
+              searchQuery={searchQuery}
+              onBack={goBack}
+            />
+          )}
+          {currentScreen === 'shaadi-feed' && (
+            <ShaadiFeed
+              selectedSubCategory={selectedSubCategory}
+              selectedCity={selectedCity}
+              searchQuery={searchQuery}
+              onBack={goBack}
+            />
+          )}
+          {currentScreen === 'construction-feed' && (
+            <ConstructionFeed
+              selectedSubCategory={selectedSubCategory}
+              selectedCity={selectedCity}
+              searchQuery={searchQuery}
+              onBack={goBack}
+            />
+          )}
+          {currentScreen === 'advertising-feed' && (
+            <AdvertisingFeed
+              selectedSubCategory={selectedSubCategory}
+              selectedCity={selectedCity}
+              searchQuery={searchQuery}
+              onBack={goBack}
+            />
+          )}
+          {currentScreen === 'community-feed' && (
+            <CommunityFeed
+              selectedSubCategory={selectedSubCategory}
+              selectedCity={selectedCity}
+              searchQuery={searchQuery}
+              onBack={goBack}
+            />
+          )}
+          {currentScreen === 'market-feed' && (
+            <MarketFeed
+              selectedSubCategory={selectedSubCategory}
+              selectedCity={selectedCity}
+              searchQuery={searchQuery}
+              onBack={goBack}
+            />
+          )}
+          {currentScreen === 'recommerce-feed' && (
+            <ReCommerceFeed
+              selectedSubCategory={selectedSubCategory}
+              selectedCity={selectedCity}
+              searchQuery={searchQuery}
+              onBack={goBack}
+            />
+          )}
+        </Suspense>
       </main>
 
-      {/* BOTTOM FLOATING NAV */}
-      <footer className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-slate-950/95 backdrop-blur-md border-t border-slate-800 px-6 py-2 z-40 flex items-center justify-around">
+      {/* 🌟 3. FLOATING STEP HISTORY PILL */}
+      <aside className="fixed bottom-16 right-4 z-40 flex items-center space-x-1 bg-slate-900/90 backdrop-blur-md p-1.5 rounded-full border border-slate-700 shadow-2xl">
         <button
           type="button"
-          onClick={() => setCurrentScreen('home')}
+          onClick={goBack}
+          disabled={!canGoBack}
+          className={`w-8 h-8 rounded-full flex items-center justify-center font-black text-xs transition active:scale-90 ${
+            canGoBack
+              ? 'bg-slate-800 text-amber-400 hover:bg-amber-400 hover:text-slate-950 cursor-pointer shadow-md'
+              : 'bg-slate-950 text-slate-700 cursor-not-allowed opacity-30'
+          }`}
+          title="Go Back (Swipe Right)"
+        >
+          ◀
+        </button>
+
+        <span className="text-[9px] font-mono font-bold text-slate-400 px-1">
+          {historyIndex + 1}/{history.length}
+        </span>
+
+        <button
+          type="button"
+          onClick={goForward}
+          disabled={!canGoForward}
+          className={`w-8 h-8 rounded-full flex items-center justify-center font-black text-xs transition active:scale-90 ${
+            canGoForward
+              ? 'bg-slate-800 text-amber-400 hover:bg-amber-400 hover:text-slate-950 cursor-pointer shadow-md'
+              : 'bg-slate-950 text-slate-700 cursor-not-allowed opacity-30'
+          }`}
+          title="Go Forward (Swipe Left)"
+        >
+          ▶
+        </button>
+      </aside>
+
+      {/* 🌟 4. BOTTOM NAVIGATION BAR */}
+      <footer className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-slate-950/95 backdrop-blur-md border-t border-slate-800 px-6 py-2 z-30 flex items-center justify-around">
+        <button
+          type="button"
+          onClick={() => navigateTo({ screen: 'home' })}
           className={`flex flex-col items-center cursor-pointer transition ${
             currentScreen === 'home' ? 'text-amber-400' : 'text-slate-400 hover:text-slate-200'
           }`}
@@ -490,7 +634,7 @@ export default function App() {
 
         <button
           type="button"
-          onClick={() => setCurrentScreen('provider-dashboard')}
+          onClick={() => navigateTo({ screen: 'provider-dashboard' })}
           className={`flex flex-col items-center cursor-pointer transition ${
             currentScreen === 'provider-dashboard' ? 'text-amber-400' : 'text-slate-400 hover:text-slate-200'
           }`}
@@ -500,7 +644,7 @@ export default function App() {
         </button>
       </footer>
 
-      {/* CONTEXTUAL LISTING MODAL */}
+      {/* Modals */}
       {isListingModalOpen && (
         <ContextualListingModal
           currentScreen={currentScreen}
@@ -508,11 +652,9 @@ export default function App() {
           selectedSubCategory={selectedSubCategory}
           selectedCity={selectedCity}
           onClose={() => setIsListingModalOpen(false)}
-          onNewNotification={handleNewNotification}
         />
       )}
 
-      {/* NOTIFICATIONS PANEL */}
       {isNotificationsOpen && (
         <NotificationCenter
           notifications={notifications}

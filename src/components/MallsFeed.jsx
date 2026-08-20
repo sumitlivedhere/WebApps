@@ -1,47 +1,69 @@
 import React, { useMemo } from 'react';
+import { useStoreSlice } from '../store/hyperlocalStore';
 import ActionButtons from './common/ActionButtons';
 import ListingDiscussionThread from './common/ListingDiscussionThread';
 
 export default function MallsFeed({
-  stores = [],
-  selectedSubCategory = 'all',
+  stores: propStores,
+  selectedSubCategory,
+  selectedCategoryId,
   selectedCity = 'Alwar',
   searchQuery = '',
   onBack,
   onNewNotification,
 }) {
+  const storeStores = useStoreSlice('mallsStores');
+  const allStores = propStores && propStores.length > 0 ? propStores : storeStores;
+
+  const targetSub = (selectedSubCategory || selectedCategoryId || 'all').toLowerCase().trim();
+
   const filteredStores = useMemo(() => {
     const q = (searchQuery || '').toLowerCase().trim();
     const city = (selectedCity || '').toLowerCase().trim();
-    const targetSub = (selectedSubCategory || 'all').toLowerCase().trim();
 
-    return (stores || []).filter((item) => {
+    return (allStores || []).filter((item) => {
+      // 1. City Filter
       const loc = (item.location || item.city || '').toLowerCase();
       const matchesCity = !city || loc.includes(city) || city.includes(loc) || !loc;
       if (!matchesCity) return false;
 
+      // 2. Strict Subcategory / Store Type Filter
       const itemSub = (item.subCategory || item.shopType || item.storeType || item.sub_category || '').toLowerCase().trim();
       const matchesSub = targetSub === 'all' || itemSub === targetSub;
       if (!matchesSub) return false;
 
+      // 3. Search Query Filter
       if (!q) return true;
       return (
         item.name?.toLowerCase().includes(q) ||
         item.title?.toLowerCase().includes(q) ||
+        item.sellerName?.toLowerCase().includes(q) ||
         item.description?.toLowerCase().includes(q) ||
         item.location?.toLowerCase().includes(q)
       );
     });
-  }, [stores, selectedSubCategory, selectedCity, searchQuery]);
+  }, [allStores, targetSub, selectedCity, searchQuery]);
+
+  const getStoreTitle = () => {
+    switch (targetSub) {
+      case 'clothing': return 'Clothing & Garments (कपड़े व परिधान)';
+      case 'footwear': return 'Footwear & Shoes (जूते व चप्पल)';
+      case 'jewelry': return 'Jewelry & Ornaments (आभूषण व ज्वेलरी)';
+      case 'electronics-store': return 'Electronics & Mobiles (इलेक्ट्रॉनिक्स व मोबाइल)';
+      case 'kirana': return 'Kirana & Supermarket (किराना व जनरल स्टोर)';
+      default: return 'All Shops & Showrooms';
+    }
+  };
 
   return (
     <main className="p-3.5 space-y-3.5 relative z-10 animate-fade-in text-slate-800">
+      {/* Header */}
       <div className="bg-white/85 backdrop-blur-md p-3.5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
         <div>
           <h2 className="text-sm font-black text-slate-900 capitalize">
-            {selectedSubCategory !== 'all' ? selectedSubCategory.replace('-', ' ') : 'Shops & Showrooms'}
+            {getStoreTitle()}
           </h2>
-          <p className="text-[10px] text-slate-500">Retail & Boutiques in {selectedCity}</p>
+          <p className="text-[10px] text-slate-500">Retail stores & showrooms in {selectedCity}</p>
         </div>
         <button
           type="button"
@@ -52,11 +74,12 @@ export default function MallsFeed({
         </button>
       </div>
 
+      {/* Store Cards */}
       {filteredStores.length === 0 ? (
         <div className="bg-white/80 rounded-2xl p-8 text-center border border-slate-200">
           <span className="text-3xl">👗</span>
           <p className="text-slate-600 font-bold text-xs mt-2">
-            No stores found in this category for {selectedCity}.
+            No showrooms or shops found under {targetSub !== 'all' ? targetSub : 'this section'} in {selectedCity}.
           </p>
         </div>
       ) : (
@@ -69,6 +92,7 @@ export default function MallsFeed({
               <img
                 src={
                   s.image ||
+                  s.photo ||
                   s.logo ||
                   'https://images.unsplash.com/photo-1441986300917-64674bd600d8?w=700'
                 }
@@ -96,8 +120,8 @@ export default function MallsFeed({
             <div className="pt-0.5">
               <div className="flex items-start justify-between">
                 <h3 className="font-black text-slate-900 text-sm">{s.name || s.title}</h3>
-                <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md shrink-0 ml-2">
-                  {s.subCategory ? s.subCategory.toUpperCase() : 'STORE'}
+                <span className="text-[10px] font-bold text-pink-800 bg-pink-50 border border-pink-200 px-2 py-0.5 rounded-md shrink-0 ml-2">
+                  {(s.subCategory || s.shopType || 'STORE').toUpperCase()}
                 </span>
               </div>
 
@@ -114,7 +138,7 @@ export default function MallsFeed({
             <ActionButtons
               phone={s.phone || '9876543210'}
               whatsapp={s.whatsapp || s.phone || '919876543210'}
-              message={`Namaste, I want to inquire about products at "${s.name || s.title}".`}
+              message={`Namaste, I want to inquire about products/offers at "${s.name || s.title}".`}
             />
           </article>
         ))

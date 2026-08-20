@@ -1,35 +1,45 @@
 import React, { useMemo } from 'react';
+import { useStoreSlice } from '../store/hyperlocalStore';
 import ActionButtons from './common/ActionButtons';
 import ListingDiscussionThread from './common/ListingDiscussionThread';
 
 export default function TransporterFeed({
-  individualTransporters = [],
-  transportFirms = [],
-  selectedSubCategory = 'all',
+  individualTransporters: propIndividual,
+  transportFirms: propFirms,
+  selectedSubCategory,
+  selectedVehicleType,
   selectedCity = 'Alwar',
   searchQuery = '',
   onBack,
   onNewNotification,
 }) {
-  const allTransporters = useMemo(
-    () => [...(individualTransporters || []), ...(transportFirms || [])],
-    [individualTransporters, transportFirms]
-  );
+  const storeIndividual = useStoreSlice('individualTransporters');
+  const storeFirms = useStoreSlice('transportFirms');
+
+  const allTransporters = useMemo(() => {
+    const ind = propIndividual && propIndividual.length > 0 ? propIndividual : storeIndividual;
+    const firms = propFirms && propFirms.length > 0 ? propFirms : storeFirms;
+    return [...(ind || []), ...(firms || [])];
+  }, [propIndividual, propFirms, storeIndividual, storeFirms]);
+
+  const targetSub = (selectedSubCategory || selectedVehicleType || 'all').toLowerCase().trim();
 
   const filteredTransporters = useMemo(() => {
     const q = (searchQuery || '').toLowerCase().trim();
     const city = (selectedCity || '').toLowerCase().trim();
-    const targetSub = (selectedSubCategory || 'all').toLowerCase().trim();
 
     return allTransporters.filter((item) => {
+      // 1. City Filter
       const loc = (item.location || item.city || '').toLowerCase();
       const matchesCity = !city || loc.includes(city) || city.includes(loc) || !loc;
       if (!matchesCity) return false;
 
+      // 2. Strict Subcategory / Vehicle Type Filter
       const itemSub = (item.subCategory || item.vehicleType || item.sub_category || '').toLowerCase().trim();
       const matchesSub = targetSub === 'all' || itemSub === targetSub;
       if (!matchesSub) return false;
 
+      // 3. Search Query Filter
       if (!q) return true;
       return (
         item.name?.toLowerCase().includes(q) ||
@@ -39,16 +49,29 @@ export default function TransporterFeed({
         item.location?.toLowerCase().includes(q)
       );
     });
-  }, [allTransporters, selectedSubCategory, selectedCity, searchQuery]);
+  }, [allTransporters, targetSub, selectedCity, searchQuery]);
+
+  const getVehicleTitle = () => {
+    switch (targetSub) {
+      case 'bolero-pickup': return 'Bolero Maxi / Pickup (बोलेरो पिकअप)';
+      case 'tata-ace': return 'Tata Ace / Chota Hathi (छोटा हाथी)';
+      case 'loading-auto': return '3-Wheeler Loading Auto (लोडिंग ऑटो)';
+      case 'e-rickshaw-loader': return 'E-Rickshaw Loader (ई-रिक्शा लोडर)';
+      case 'heavy-truck': return 'Heavy Truck & Dumper (भारी ट्रक व डंपर)';
+      case 'packers-movers': return 'Packers & Movers (पैकिंग व शिफ्टिंग)';
+      default: return 'All Transporters & Loading';
+    }
+  };
 
   return (
     <main className="p-3.5 space-y-3.5 relative z-10 animate-fade-in text-slate-800">
+      {/* Header */}
       <div className="bg-white/85 backdrop-blur-md p-3.5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
         <div>
           <h2 className="text-sm font-black text-slate-900 capitalize">
-            {selectedSubCategory !== 'all' ? selectedSubCategory.replace('-', ' ') : 'All Transporters'}
+            {getVehicleTitle()}
           </h2>
-          <p className="text-[10px] text-slate-500">Pickup, Loading & Transport in {selectedCity}</p>
+          <p className="text-[10px] text-slate-500">Pickup, loading & logistics in {selectedCity}</p>
         </div>
         <button
           type="button"
@@ -59,11 +82,12 @@ export default function TransporterFeed({
         </button>
       </div>
 
+      {/* Cards List */}
       {filteredTransporters.length === 0 ? (
         <div className="bg-white/80 rounded-2xl p-8 text-center border border-slate-200">
           <span className="text-3xl">🚚</span>
           <p className="text-slate-600 font-bold text-xs mt-2">
-            No transport vehicles found in this subcategory for {selectedCity}.
+            No transport vehicles found under {targetSub !== 'all' ? targetSub : 'this category'} in {selectedCity}.
           </p>
         </div>
       ) : (
@@ -103,8 +127,8 @@ export default function TransporterFeed({
             <div className="pt-0.5">
               <div className="flex items-start justify-between">
                 <h3 className="font-black text-slate-900 text-sm">{t.name || t.title}</h3>
-                <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md shrink-0 ml-2">
-                  {t.subCategory ? t.subCategory.toUpperCase() : 'TRANSPORTER'}
+                <span className="text-[10px] font-bold text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md shrink-0 ml-2">
+                  {(t.subCategory || t.vehicleType || 'TRANSPORT').toUpperCase()}
                 </span>
               </div>
 

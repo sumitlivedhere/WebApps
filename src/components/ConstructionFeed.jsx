@@ -1,47 +1,68 @@
 import React, { useMemo } from 'react';
+import { useStoreSlice } from '../store/hyperlocalStore';
 import ActionButtons from './common/ActionButtons';
 import ListingDiscussionThread from './common/ListingDiscussionThread';
 
 export default function ConstructionFeed({
-  listings = [],
-  selectedSubCategory = 'all',
+  listings: propListings,
+  selectedSubCategory,
+  selectedSectorId,
   selectedCity = 'Alwar',
   searchQuery = '',
   onBack,
   onNewNotification,
 }) {
+  const storeListings = useStoreSlice('constructionListings');
+  const allListings = propListings && propListings.length > 0 ? propListings : storeListings;
+
+  const targetSub = (selectedSubCategory || selectedSectorId || 'all').toLowerCase().trim();
+
   const filteredListings = useMemo(() => {
     const q = (searchQuery || '').toLowerCase().trim();
     const city = (selectedCity || '').toLowerCase().trim();
-    const targetSub = (selectedSubCategory || 'all').toLowerCase().trim();
 
-    return (listings || []).filter((item) => {
+    return (allListings || []).filter((item) => {
+      // 1. City Filter
       const loc = (item.location || item.city || '').toLowerCase();
       const matchesCity = !city || loc.includes(city) || city.includes(loc) || !loc;
       if (!matchesCity) return false;
 
+      // 2. Strict Subcategory / Work Type Filter
       const itemSub = (item.subCategory || item.workType || item.sub_category || '').toLowerCase().trim();
       const matchesSub = targetSub === 'all' || itemSub === targetSub;
       if (!matchesSub) return false;
 
+      // 3. Search Query Filter
       if (!q) return true;
       return (
         item.name?.toLowerCase().includes(q) ||
         item.title?.toLowerCase().includes(q) ||
+        item.contractorName?.toLowerCase().includes(q) ||
         item.description?.toLowerCase().includes(q) ||
         item.location?.toLowerCase().includes(q)
       );
     });
-  }, [listings, selectedSubCategory, selectedCity, searchQuery]);
+  }, [allListings, targetSub, selectedCity, searchQuery]);
+
+  const getConstructionTitle = () => {
+    switch (targetSub) {
+      case 'building-contractors': return 'Building Thekedars & Contractors (ठेकेदार)';
+      case 'building-material': return 'Building Material, Sand & Bricks (भवन सामग्री)';
+      case 'jcb-excavator': return 'JCB & Earth Movers (जेसीबी व खुदाई)';
+      case 'interior-designers': return 'Interior & Modular Kitchen (इंटीरियर डिज़ाइनर)';
+      default: return 'All Construction & Material';
+    }
+  };
 
   return (
     <main className="p-3.5 space-y-3.5 relative z-10 animate-fade-in text-slate-800">
+      {/* Header */}
       <div className="bg-white/85 backdrop-blur-md p-3.5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
         <div>
           <h2 className="text-sm font-black text-slate-900 capitalize">
-            {selectedSubCategory !== 'all' ? selectedSubCategory.replace('-', ' ') : 'Construction & Material'}
+            {getConstructionTitle()}
           </h2>
-          <p className="text-[10px] text-slate-500">Contractors, JCB & Material in {selectedCity}</p>
+          <p className="text-[10px] text-slate-500">Verified contractors & machinery in {selectedCity}</p>
         </div>
         <button
           type="button"
@@ -52,11 +73,12 @@ export default function ConstructionFeed({
         </button>
       </div>
 
+      {/* Cards List */}
       {filteredListings.length === 0 ? (
         <div className="bg-white/80 rounded-2xl p-8 text-center border border-slate-200">
           <span className="text-3xl">🏗️</span>
           <p className="text-slate-600 font-bold text-xs mt-2">
-            No construction listings found in this category for {selectedCity}.
+            No construction listings found under {targetSub !== 'all' ? targetSub : 'this category'} in {selectedCity}.
           </p>
         </div>
       ) : (
@@ -70,6 +92,7 @@ export default function ConstructionFeed({
                 src={
                   c.image ||
                   c.photo ||
+                  c.banner ||
                   'https://images.unsplash.com/photo-1504307651254-35680f356dfd?w=700'
                 }
                 alt={c.name || c.title}
@@ -80,13 +103,13 @@ export default function ConstructionFeed({
                 }}
               />
               <span className="absolute bottom-2.5 left-2.5 text-xs font-black px-2.5 py-1 rounded-xl text-white bg-slate-950/85 backdrop-blur-md border border-white/10">
-                {c.price || 'Competitive Rates'}
+                {c.price || c.rates || 'Competitive Rates'}
               </span>
 
               <ListingDiscussionThread
                 listingId={c.id}
                 listingTitle={c.name || c.title}
-                sellerName={c.sellerName || 'Contractor'}
+                sellerName={c.contractorName || c.sellerName || 'Contractor'}
                 sellerPhone={c.phone || c.whatsapp}
                 interestCount={c.interestCount || 0}
                 onNewNotification={onNewNotification}
@@ -96,8 +119,8 @@ export default function ConstructionFeed({
             <div className="pt-0.5">
               <div className="flex items-start justify-between">
                 <h3 className="font-black text-slate-900 text-sm">{c.name || c.title}</h3>
-                <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md shrink-0 ml-2">
-                  {c.subCategory ? c.subCategory.toUpperCase() : 'CONTRACTOR'}
+                <span className="text-[10px] font-bold text-amber-900 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md shrink-0 ml-2">
+                  {(c.subCategory || c.workType || 'CONSTRUCTION').toUpperCase()}
                 </span>
               </div>
 
@@ -107,14 +130,14 @@ export default function ConstructionFeed({
 
               <div className="flex items-center justify-between text-[10px] text-slate-500 font-semibold mt-2 pt-2 border-t border-slate-100">
                 <span>📍 {c.location || selectedCity}</span>
-                <span className="text-emerald-700 font-bold">{c.distance || '0.1 km away'}</span>
+                <span className="text-emerald-700 font-bold">{c.experience || '5+ Yrs Exp'}</span>
               </div>
             </div>
 
             <ActionButtons
               phone={c.phone || '9876543210'}
               whatsapp={c.whatsapp || c.phone || '919876543210'}
-              message={`Namaste, I want to inquire regarding "${c.name || c.title}".`}
+              message={`Namaste, I want to inquire regarding construction work / machinery booking for "${c.name || c.title}".`}
             />
           </article>
         ))

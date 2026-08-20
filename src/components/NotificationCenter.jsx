@@ -1,138 +1,121 @@
-import React, { useState } from 'react';
+import React from 'react';
+import { hyperlocalStore } from '../store/hyperlocalStore';
 
-export default function NotificationCenter({
-  isOpen,
-  onClose,
-  notifications,
-  onNotificationClick,
-  onClearAll,
-}) {
-  const [filterType, setFilterType] = useState('all');
+const TAG_COLORS = {
+  'LISTING LIVE': 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
+  'INTEREST REGISTERED': 'bg-amber-500/20 text-amber-300 border-amber-500/30',
+  'NEW COMMENT': 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30',
+  'SELLER REPLIED': 'bg-purple-500/20 text-purple-300 border-purple-500/30',
+  'FRESH ARRIVAL': 'bg-rose-500/20 text-rose-300 border-rose-500/30',
+  'TOWN UPDATE': 'bg-blue-500/20 text-blue-300 border-blue-500/30',
+};
 
-  if (!isOpen) return null;
+export default function NotificationCenter({ notifications = [], onClose }) {
+  const unreadCount = notifications.filter((n) => !n.read).length;
 
-  const filteredNotifs = notifications.filter((n) => {
-    if (filterType === 'all') return true;
-    if (filterType === 'alerts') return n.tag?.toLowerCase().includes('alert') || n.tag?.toLowerCase().includes('price');
-    if (filterType === 'fresh') return n.tag?.toLowerCase().includes('fresh') || n.tag?.toLowerCase().includes('live');
-    if (filterType === 'urgent') return n.tag?.toLowerCase().includes('urgent') || n.tag?.toLowerCase().includes('blood');
-    return true;
-  });
+  const handleMarkAllRead = () => {
+    hyperlocalStore.markAllNotificationsRead();
+  };
+
+  const handleClearAll = () => {
+    hyperlocalStore.clearNotifications();
+  };
+
+  const handleItemClick = (id) => {
+    hyperlocalStore.markNotificationRead(id);
+  };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex flex-col justify-end max-w-md mx-auto animate-fade-in">
-      <div className="bg-white rounded-t-3xl max-h-[85vh] overflow-hidden flex flex-col shadow-2xl border-t border-indigo-200">
-        
-        {/* HEADER */}
-        <div className="px-4 py-3.5 bg-gradient-to-r from-slate-950 via-indigo-950 to-slate-900 text-white flex items-center justify-between">
-          <div className="flex items-center space-x-2.5">
-            <div className="w-8 h-8 rounded-full bg-amber-400 text-slate-950 flex items-center justify-center text-sm font-black shadow-md">
-              🔔
-            </div>
+    <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-3 animate-fade-in">
+      <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-md overflow-hidden shadow-2xl flex flex-col max-h-[85vh]">
+        {/* Header */}
+        <div className="bg-slate-950 p-4 border-b border-slate-800 flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <span className="text-xl">🔔</span>
             <div>
-              <h2 className="text-sm font-black text-white leading-tight">
-                Town Live Alerts (शहर की ताज़ा हलचल)
+              <h2 className="text-sm font-black text-amber-400 uppercase tracking-wider">
+                Live Town Alerts
               </h2>
-              <p className="text-[10px] text-indigo-200">
-                Fresh listings, price drops & community notices in Alwar
+              <p className="text-[10px] text-slate-400 font-semibold">
+                {unreadCount} new update{unreadCount === 1 ? '' : 's'}
               </p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="w-7 h-7 rounded-full bg-white/20 hover:bg-white/30 text-white flex items-center justify-center font-bold text-xs cursor-pointer"
-          >
-            ✕
-          </button>
-        </div>
 
-        {/* PILL FILTERS */}
-        <div className="flex space-x-1.5 px-4 py-2 bg-slate-50 border-b border-slate-200/80 overflow-x-auto no-scrollbar">
-          {[
-            { id: 'all', label: 'All Alerts (सभी)' },
-            { id: 'fresh', label: '⚡ New Nearby (नया सामान)' },
-            { id: 'alerts', label: '📉 Price Drops' },
-            { id: 'urgent', label: '🚨 Urgent / Seva' },
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => setFilterType(tab.id)}
-              className={`px-3 py-1 rounded-xl text-[10px] font-black whitespace-nowrap transition cursor-pointer ${
-                filterType === tab.id
-                  ? 'bg-indigo-600 text-white shadow-xs'
-                  : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-
-        {/* NOTIFICATION FEED LIST */}
-        <div className="p-3.5 overflow-y-auto space-y-2.5 flex-1">
-          {filteredNotifs.length === 0 ? (
-            <div className="text-center py-10">
-              <span className="text-3xl block mb-1">📭</span>
-              <p className="text-xs font-bold text-slate-600">Koi naya alert nahi hai.</p>
-              <p className="text-[10px] text-slate-400 mt-0.5">Jaise hi koi naya option aayega, yahan dikhega.</p>
-            </div>
-          ) : (
-            filteredNotifs.map((notif) => (
-              <div
-                key={notif.id}
-                onClick={() => onNotificationClick(notif)}
-                className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-start space-x-3 ${
-                  notif.isRead
-                    ? 'bg-white border-slate-200/70 text-slate-700'
-                    : 'bg-gradient-to-r from-amber-50/70 via-indigo-50/40 to-white border-amber-300/80 shadow-xs'
-                }`}
-              >
-                <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-base shrink-0 ${
-                  notif.tag?.includes('Price') ? 'bg-emerald-100 text-emerald-700' :
-                  notif.tag?.includes('Fresh') ? 'bg-amber-100 text-amber-800' :
-                  'bg-indigo-100 text-indigo-800'
-                }`}>
-                  {notif.tag?.includes('Price') ? '📉' : notif.tag?.includes('Fresh') ? '⚡' : '📢'}
-                </div>
-
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[9px] font-black uppercase tracking-wider text-indigo-700 bg-indigo-50 border border-indigo-100 px-1.5 py-0.2 rounded-md">
-                      {notif.tag || 'Town Update'}
-                    </span>
-                    <span className="text-[9px] text-slate-400 font-bold">{notif.time}</span>
-                  </div>
-
-                  <h3 className="text-xs font-black text-slate-900 mt-1 leading-snug truncate">
-                    {notif.title}
-                  </h3>
-                  <p className="text-[11px] text-slate-600 font-medium mt-0.5 leading-snug line-clamp-2">
-                    {notif.message}
-                  </p>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-
-        {/* BOTTOM ACTION BAR */}
-        {notifications.length > 0 && (
-          <div className="p-3 bg-slate-50 border-t border-slate-200 flex justify-between items-center">
-            <span className="text-[10px] text-slate-500 font-bold">
-              {notifications.length} Total Alerts
-            </span>
+          <div className="flex items-center space-x-2">
+            {notifications.length > 0 && (
+              <>
+                <button
+                  type="button"
+                  onClick={handleMarkAllRead}
+                  className="text-[10px] font-bold text-amber-400 hover:text-amber-300 bg-slate-900 px-2.5 py-1 rounded-xl border border-slate-800 active:scale-95 transition"
+                >
+                  Mark read
+                </button>
+                <button
+                  type="button"
+                  onClick={handleClearAll}
+                  className="text-[10px] font-bold text-slate-400 hover:text-rose-400 bg-slate-900 px-2 py-1 rounded-xl border border-slate-800 active:scale-95 transition"
+                >
+                  Clear
+                </button>
+              </>
+            )}
             <button
               type="button"
-              onClick={onClearAll}
-              className="text-[10px] font-extrabold text-rose-600 hover:text-rose-700 active:scale-95 transition"
+              onClick={onClose}
+              className="w-7 h-7 rounded-xl bg-slate-800 text-slate-300 hover:text-white flex items-center justify-center font-black text-xs active:scale-95 transition"
             >
-              Clear All Alerts
+              ✕
             </button>
           </div>
-        )}
+        </div>
 
+        {/* Notifications List */}
+        <div className="p-3.5 overflow-y-auto space-y-2.5 flex-1">
+          {notifications.length === 0 ? (
+            <div className="py-12 text-center text-slate-500">
+              <span className="text-4xl block">🔕</span>
+              <p className="font-bold text-xs mt-2 text-slate-400">All caught up!</p>
+              <p className="text-[10px] text-slate-500">
+                You will be notified when buyers express interest or reply to your listings.
+              </p>
+            </div>
+          ) : (
+            notifications.map((notif) => {
+              const tagStyle = TAG_COLORS[notif.tag] || 'bg-slate-800 text-slate-300 border-slate-700';
+              return (
+                <div
+                  key={notif.id}
+                  onClick={() => handleItemClick(notif.id)}
+                  className={`p-3 rounded-2xl border transition cursor-pointer relative ${
+                    notif.read
+                      ? 'bg-slate-900/60 border-slate-800/80 text-slate-400'
+                      : 'bg-slate-800/90 border-amber-400/30 text-white shadow-md'
+                  }`}
+                >
+                  {!notif.read && (
+                    <span className="absolute top-3 right-3 w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+                  )}
+
+                  <div className="flex items-center space-x-2">
+                    <span
+                      className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-lg border ${tagStyle}`}
+                    >
+                      {notif.tag}
+                    </span>
+                    <span className="text-[9px] text-slate-400 font-semibold">{notif.time}</span>
+                  </div>
+
+                  <h3 className={`text-xs font-black mt-1.5 ${notif.read ? 'text-slate-300' : 'text-amber-300'}`}>
+                    {notif.title}
+                  </h3>
+                  <p className="text-[11px] text-slate-300 mt-0.5 leading-snug">{notif.message}</p>
+                </div>
+              );
+            })
+          )}
+        </div>
       </div>
     </div>
   );

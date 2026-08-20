@@ -1,47 +1,68 @@
 import React, { useMemo } from 'react';
+import { useStoreSlice } from '../store/hyperlocalStore';
 import ActionButtons from './common/ActionButtons';
 import ListingDiscussionThread from './common/ListingDiscussionThread';
 
 export default function ShaadiFeed({
-  vendors = [],
-  selectedSubCategory = 'all',
+  vendors: propVendors,
+  selectedSubCategory,
+  selectedCategory,
   selectedCity = 'Alwar',
   searchQuery = '',
   onBack,
   onNewNotification,
 }) {
+  const storeVendors = useStoreSlice('shaadiVendors');
+  const allVendors = propVendors && propVendors.length > 0 ? propVendors : storeVendors;
+
+  const targetSub = (selectedSubCategory || selectedCategory || 'all').toLowerCase().trim();
+
   const filteredVendors = useMemo(() => {
     const q = (searchQuery || '').toLowerCase().trim();
     const city = (selectedCity || '').toLowerCase().trim();
-    const targetSub = (selectedSubCategory || 'all').toLowerCase().trim();
 
-    return (vendors || []).filter((item) => {
+    return (allVendors || []).filter((item) => {
+      // 1. City Filter
       const loc = (item.location || item.city || '').toLowerCase();
       const matchesCity = !city || loc.includes(city) || city.includes(loc) || !loc;
       if (!matchesCity) return false;
 
+      // 2. Strict Subcategory / Vendor Type Filter
       const itemSub = (item.subCategory || item.vendorType || item.sub_category || '').toLowerCase().trim();
       const matchesSub = targetSub === 'all' || itemSub === targetSub;
       if (!matchesSub) return false;
 
+      // 3. Search Query Filter
       if (!q) return true;
       return (
         item.name?.toLowerCase().includes(q) ||
         item.title?.toLowerCase().includes(q) ||
+        item.sellerName?.toLowerCase().includes(q) ||
         item.description?.toLowerCase().includes(q) ||
         item.location?.toLowerCase().includes(q)
       );
     });
-  }, [vendors, selectedSubCategory, selectedCity, searchQuery]);
+  }, [allVendors, targetSub, selectedCity, searchQuery]);
+
+  const getShaadiTitle = () => {
+    switch (targetSub) {
+      case 'marriage-gardens': return 'Marriage Gardens & Banquets (मैरिज गार्डन)';
+      case 'halwai-caterers': return 'Halwai & Catering (हलवाई व कैटरिंग)';
+      case 'tent-light': return 'Tent & DJ Sound (टेंट व डीजे साउंड)';
+      case 'photographers': return 'Wedding Photography (वेडिंग फोटोग्राफी)';
+      default: return 'All Wedding Services';
+    }
+  };
 
   return (
     <main className="p-3.5 space-y-3.5 relative z-10 animate-fade-in text-slate-800">
+      {/* Header */}
       <div className="bg-white/85 backdrop-blur-md p-3.5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
         <div>
           <h2 className="text-sm font-black text-slate-900 capitalize">
-            {selectedSubCategory !== 'all' ? selectedSubCategory.replace('-', ' ') : 'All Wedding Services'}
+            {getShaadiTitle()}
           </h2>
-          <p className="text-[10px] text-slate-500">Gardens, Halwai, Tent & Photo in {selectedCity}</p>
+          <p className="text-[10px] text-slate-500">Verified wedding vendors in {selectedCity}</p>
         </div>
         <button
           type="button"
@@ -52,11 +73,12 @@ export default function ShaadiFeed({
         </button>
       </div>
 
+      {/* Vendor Cards List */}
       {filteredVendors.length === 0 ? (
         <div className="bg-white/80 rounded-2xl p-8 text-center border border-slate-200">
           <span className="text-3xl">💍</span>
           <p className="text-slate-600 font-bold text-xs mt-2">
-            No vendors found in this category for {selectedCity}.
+            No wedding vendors found under {targetSub !== 'all' ? targetSub : 'this category'} in {selectedCity}.
           </p>
         </div>
       ) : (
@@ -86,7 +108,7 @@ export default function ShaadiFeed({
               <ListingDiscussionThread
                 listingId={v.id}
                 listingTitle={v.name || v.title}
-                sellerName={v.sellerName || 'Vendor'}
+                sellerName={v.sellerName || v.name || 'Vendor'}
                 sellerPhone={v.phone || v.whatsapp}
                 interestCount={v.interestCount || 0}
                 onNewNotification={onNewNotification}
@@ -96,8 +118,8 @@ export default function ShaadiFeed({
             <div className="pt-0.5">
               <div className="flex items-start justify-between">
                 <h3 className="font-black text-slate-900 text-sm">{v.name || v.title}</h3>
-                <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md shrink-0 ml-2">
-                  {v.subCategory ? v.subCategory.toUpperCase() : 'VENDOR'}
+                <span className="text-[10px] font-bold text-rose-800 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-md shrink-0 ml-2">
+                  {(v.subCategory || v.vendorType || 'VENDOR').toUpperCase()}
                 </span>
               </div>
 
@@ -114,7 +136,7 @@ export default function ShaadiFeed({
             <ActionButtons
               phone={v.phone || '9876543210'}
               whatsapp={v.whatsapp || v.phone || '919876543210'}
-              message={`Namaste, I want to inquire for wedding booking at "${v.name || v.title}".`}
+              message={`Namaste, I want to inquire regarding wedding bookings/dates for "${v.name || v.title}".`}
             />
           </article>
         ))

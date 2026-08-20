@@ -1,375 +1,578 @@
-import React, { useState, useMemo } from 'react';
-import { TRADE_REGISTRY } from './data/tradeRegistry';
-import { compressListingImage } from './utils/imageCompressor';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import {
+  hyperlocalStore,
+  useAllListingsSlice,
+} from './store/hyperlocalStore';
 
-export default function ProviderDashboard({ onBackToUserMode, onAddListing }) {
-  const [selectedTrade, setSelectedTrade] = useState(null);
-  const [tradeSearch, setTradeSearch] = useState('');
-  const [isListening, setIsListening] = useState(false);
+export default function ProviderDashboard({ onBack }) {
+  const [activeTab, setActiveTab] = useState('inquiries');
+  const [replyInputs, setReplyInputs] = useState({});
+  
+  // 🌟 Voice Mode Accessibility Switch
+  const [isVoiceMode, setIsVoiceMode] = useState(() => {
+    return localStorage.getItem('townhub_voice_mode') === 'true';
+  });
+  
+  // Speech Synthesis & Recognition States
+  const [speakingId, setSpeakingId] = useState(null);
+  const [listeningId, setListeningId] = useState(null);
+  const recognitionRef = useRef(null);
 
-  // Operational State
-  const [isAvailableToday, setIsAvailableToday] = useState(true);
-  const [compressing, setCompressing] = useState(false);
+  const allListings = useAllListingsSlice();
 
-  // Form Field State
-  const [title, setTitle] = useState('');
-  const [price, setPrice] = useState('');
-  const [mrp, setMrp] = useState('');
-  const [phone, setPhone] = useState('');
-  const [locationArea, setLocationArea] = useState('Budh Vihar, Alwar');
-  const [description, setDescription] = useState('');
-  const [images, setImages] = useState([]);
+  // Save voice preference
+  const toggleVoiceMode = () => {
+    const nextVal = !isVoiceMode;
+    setIsVoiceMode(nextVal);
+    localStorage.setItem('townhub_voice_mode', String(nextVal));
 
-  // Voice Search Handler (Web Speech API)
-  const handleVoiceSearch = () => {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      alert('Voice input is not supported in this browser.');
+    if (nextVal) {
+      speakText('आवाज़ मोड चालू हो गया है। अब आप सारे संदेश सुन सकते हैं और बोलकर जवाब दे सकते हैं।', 'mode-toggle');
+    } else {
+      stopSpeaking();
+    }
+  };
+
+  // 1. Listings portfolio
+  const myListings = useMemo(() => {
+    return (allListings || []).slice(0, 4);
+  }, [allListings]);
+
+  // 2. Aggregated customer questions/threads
+  const userInquiries = useMemo(() => {
+    const threadMap = hyperlocalStore.state.threads || {};
+    const inquiries = [];
+
+    myListings.forEach((listing) => {
+      const listingComments = threadMap[listing.id] || [
+        {
+          id: `demo-${listing.id}-1`,
+          userName: 'Ramesh Gurjar (Moti Dungri)',
+          userArea: 'Alwar',
+          text: 'Kya yeh abhi available hai? Thoda price kam ho sakta hai kya?',
+          timestamp: '15m ago',
+          isPublic: true,
+          sellerReply: null,
+        },
+      ];
+
+      listingComments.forEach((comm) => {
+        inquiries.push({
+          ...comm,
+          listingId: listing.id,
+          listingTitle: listing.title || listing.name,
+          listingPrice: listing.price || listing.rates,
+          listingImage: listing.image || (listing.images && listing.images[0]),
+        });
+      });
+    });
+
+    return inquiries;
+  }, [myListings, allListings]);
+
+  // 3. Computed Metrics
+  const totalInterests = useMemo(() => {
+    const interestMap = hyperlocalStore.state.interests || {};
+    return myListings.reduce((sum, item) => sum + (interestMap[item.id] || item.interestCount || 4), 0);
+  }, [myListings]);
+
+  const pendingInquiriesCount = useMemo(() => {
+    return userInquiries.filter((q) => !q.sellerReply).length;
+  }, [userInquiries]);
+
+  // Text-To-Speech (TTS) Engine
+  const speakText = (text, id) => {
+    if (!('speechSynthesis' in window)) {
+      alert('Audio narration not supported on this browser.');
       return;
     }
 
-    const recognition = new SpeechRecognition();
-    recognition.lang = 'hi-IN';
-    recognition.continuous = false;
-    recognition.interimResults = false;
+    if (speakingId === id) {
+      window.speechSynthesis.cancel();
+      setSpeakingId(null);
+      return;
+    }
 
-    recognition.onstart = () => setIsListening(true);
-    recognition.onend = () => setIsListening(false);
-    recognition.onerror = () => setIsListening(false);
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'hi-IN';
+    utterance.rate = 0.90;
+    utterance.pitch = 1.0;
 
-    recognition.onresult = (event) => {
-      const transcript = event.results[0][0].transcript;
-      setTradeSearch(transcript);
-    };
+    utterance.onstart = () => setSpeakingId(id);
+    utterance.onend = () => setSpeakingId(null);
+    utterance.onerror = () => setSpeakingId(null);
 
-    recognition.start();
+    window.speechSynthesis.speak(utterance);
   };
 
-  // Instant Token-Matching Filter
-  const matchedTrades = useMemo(() => {
-    const query = tradeSearch.trim().toLowerCase();
-    if (!query) return TRADE_REGISTRY;
+  const stopSpeaking = () => {
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    setSpeakingId(null);
+  };
 
-    return TRADE_REGISTRY.filter((t) => {
-      const inName = t.name.toLowerCase().includes(query);
-      const inKeywords = t.keywords.some((k) => k.toLowerCase().includes(query));
-      return inName || inKeywords;
-    });
-  }, [tradeSearch]);
+  // Speech-To-Text (Voice Dictation) Engine
+  const handleStartVoiceDictation = (commentId) => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
-  // Image Upload Processor
-  const handlePhotoCapture = async (e) => {
-    const files = Array.from(e.target.files);
-    if (!files.length) return;
+    if (!SpeechRecognition) {
+      alert('Voice dictation is not supported on this browser. Please type your reply.');
+      return;
+    }
 
-    setCompressing(true);
+    if (listeningId === commentId) {
+      if (recognitionRef.current) recognitionRef.current.stop();
+      setListeningId(null);
+      return;
+    }
+
     try {
-      const compressedList = await Promise.all(
-        files.map((file) => compressListingImage(file, 800, 0.72))
-      );
-      setImages((prev) => [...prev, ...compressedList].slice(0, 3));
+      const recognition = new SpeechRecognition();
+      recognition.lang = 'hi-IN'; // Supports Hindi and Indian English mix
+      recognition.continuous = false;
+      recognition.interimResults = false;
+
+      recognition.onstart = () => {
+        setListeningId(commentId);
+      };
+
+      recognition.onresult = (event) => {
+        const spokenTranscript = event.results[0][0].transcript;
+        setReplyInputs((prev) => ({
+          ...prev,
+          [commentId]: prev[commentId] ? `${prev[commentId]} ${spokenTranscript}` : spokenTranscript,
+        }));
+        setListeningId(null);
+      };
+
+      recognition.onerror = () => {
+        setListeningId(null);
+      };
+
+      recognition.onend = () => {
+        setListeningId(null);
+      };
+
+      recognitionRef.current = recognition;
+      recognition.start();
     } catch (err) {
-      console.error('Image compression failed:', err);
-    } finally {
-      setCompressing(false);
+      setListeningId(null);
     }
   };
 
-  const handlePublish = (e) => {
-    e.preventDefault();
-    if (!title || !price) return;
-
-    const newListing = {
-      id: `item_${Date.now()}`,
-      title,
-      category: selectedTrade.category,
-      subCategory: selectedTrade.id,
-      rawPrice: Number(price),
-      price: `₹${Number(price).toLocaleString('en-IN')}`,
-      mrp: mrp ? `₹${Number(mrp).toLocaleString('en-IN')}` : null,
-      location: locationArea,
-      phone: phone || '9876543210',
-      images: images.length ? images : ['https://images.unsplash.com/photo-1581291518857-4e27b48ff24e?w=500&auto=format&fit=crop&q=60'],
-      isOpenToday: isAvailableToday,
-      tradeId: selectedTrade.id,
-      workspaceType: selectedTrade.workspaceType,
-      createdAt: 'Just now',
+  // Clean up audio on unmount
+  useEffect(() => {
+    return () => {
+      stopSpeaking();
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
     };
+  }, []);
 
-    onAddListing(newListing);
+  // Audio Summary for Dashboard Overview
+  const handleReadFullSummary = () => {
+    const summaryScript = `आपके कुल ${myListings.length} विज्ञापन चालू हैं। ${totalInterests} ग्राहकों ने रुचि दिखाई है। और ${pendingInquiriesCount} नए सवालों का जवाब देना बाकी है।`;
+    speakText(summaryScript, 'dashboard-summary');
   };
 
-  // ==========================================
-  // VIEW 1: SMART TRADE SELECTOR (ENTRY SCREEN)
-  // ==========================================
-  if (!selectedTrade) {
-    return (
-      <div className="p-4 space-y-4 max-w-md mx-auto text-slate-800 animate-fadeIn">
-        {/* Top Navigation */}
-        <div className="flex items-center justify-between">
-          <span className="text-[10px] font-black text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-full uppercase tracking-wider">
-            व्यापारी व कारीगर पोर्टल
-          </span>
-          <button
-            type="button"
-            onClick={onBackToUserMode}
-            className="text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-xl transition active:scale-95"
-          >
-            ← User App
-          </button>
-        </div>
+  // Direct Reply Dispatcher
+  const handleSendReply = (listingId, commentId, listingTitle) => {
+    const text = (replyInputs[commentId] || '').trim();
+    if (!text) return;
 
-        {/* Hero Prompt */}
-        <div>
-          <h2 className="text-xl font-black text-slate-900 leading-tight">
-            आप क्या काम या व्यापार करते हैं?
-          </h2>
-          <p className="text-xs text-slate-500 mt-1">
-            बोलकर या लिखकर अपना पेशा चुनें और सीधा अपना डैशबोर्ड पाएँ।
-          </p>
-        </div>
+    const replyObj = {
+      text,
+      timestamp: 'Just now',
+      sellerName: 'You (Owner)',
+    };
 
-        {/* Voice & Search Input Bar */}
-        <div className="relative flex items-center shadow-sm">
-          <input
-            type="text"
-            value={tradeSearch}
-            onChange={(e) => setTradeSearch(e.target.value)}
-            placeholder="उदा. Plumber, कपड़े की दुकान, ड्राइवर..."
-            className="w-full bg-white border-2 border-indigo-100 focus:border-indigo-600 rounded-2xl pl-4 pr-12 py-3 text-xs font-bold outline-none transition"
-          />
-          <button
-            type="button"
-            onClick={handleVoiceSearch}
-            className={`absolute right-2 p-2 rounded-xl border transition active:scale-90 ${
-              isListening
-                ? 'bg-rose-500 text-white animate-pulse border-rose-600'
-                : 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100'
-            }`}
-            title="Speak your trade"
-          >
-            <span className="text-sm">🎙️</span>
-          </button>
-        </div>
+    hyperlocalStore.addSellerReply(listingId, commentId, replyObj, listingTitle);
+    setReplyInputs((prev) => ({ ...prev, [commentId]: '' }));
 
-        {/* Direct-Match Cards (1-Tap Selection) */}
-        <div>
-          <div className="text-[11px] font-black uppercase text-slate-400 mb-2">
-            {tradeSearch ? `Matching Trades (${matchedTrades.length})` : 'Popular Local Trades'}
-          </div>
+    if (isVoiceMode) {
+      speakText('आपका जवाब ग्राहक को भेज दिया गया है।', `sent-${commentId}`);
+    }
+  };
 
-          <div className="grid grid-cols-2 gap-2.5 max-h-[60vh] overflow-y-auto pr-1">
-            {matchedTrades.map((trade) => (
-              <button
-                key={trade.id}
-                type="button"
-                onClick={() => {
-                  setSelectedTrade(trade);
-                  setPrice(trade.defaultRate || '');
-                }}
-                className="bg-white p-3.5 rounded-2xl border border-slate-200/80 hover:border-indigo-600 shadow-sm text-left flex flex-col justify-between active:scale-95 transition group"
-              >
-                <div className="text-2xl mb-1.5 group-hover:scale-110 transition-transform">
-                  {trade.icon}
-                </div>
-                <div>
-                  <div className="text-xs font-black text-slate-900 leading-tight">
-                    {trade.name}
-                  </div>
-                  <span className="inline-block text-[9px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded mt-1.5">
-                    {trade.workspaceType.replace('_', ' ')}
-                  </span>
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-    );
-  }
+  const handleQuickPreset = (commentId, presetText) => {
+    setReplyInputs((prev) => ({ ...prev, [commentId]: presetText }));
+    if (isVoiceMode) {
+      speakText(presetText, `preset-${commentId}`);
+    }
+  };
 
-  // ==========================================
-  // VIEW 2: DEDICATED TRADE WORKSPACE
-  // ==========================================
   return (
-    <div className="p-4 space-y-4 max-w-md mx-auto text-slate-800 animate-fadeIn">
-      {/* Dynamic Header */}
-      <div className="bg-indigo-700 text-white p-4 rounded-3xl shadow-lg relative overflow-hidden">
-        <div className="relative z-10 flex items-center justify-between">
-          <div className="flex items-center space-x-2.5">
-            <span className="text-2xl bg-white/10 p-2 rounded-2xl">{selectedTrade.icon}</span>
-            <div>
-              <div className="text-[10px] uppercase tracking-wider text-indigo-200 font-black">
-                Active Workspace
-              </div>
-              <h2 className="text-sm font-black text-white">{selectedTrade.name}</h2>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => setSelectedTrade(null)}
-            className="text-[10px] font-black bg-white/20 hover:bg-white/30 text-white px-2.5 py-1 rounded-xl transition"
-          >
-            बदलें (Change)
-          </button>
-        </div>
-      </div>
-
-      {/* Real-Time Operational Availability Toggle */}
-      <div className="bg-white p-3 rounded-2xl border border-slate-200 flex items-center justify-between shadow-sm">
+    <main className="p-3.5 space-y-3.5 animate-fade-in text-slate-800 pb-28">
+      {/* 🌟 1. HEADER WITH VOICE MODE ACCESSIBILITY SWITCH */}
+      <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-950 p-4 rounded-3xl text-white shadow-xl flex items-center justify-between border border-slate-800">
         <div className="flex items-center space-x-2.5">
-          <span className={`w-3 h-3 rounded-full ${isAvailableToday ? 'bg-emerald-500 animate-ping' : 'bg-rose-500'}`} />
+          <div className="w-10 h-10 rounded-2xl bg-amber-400 text-slate-950 flex items-center justify-center text-xl font-black shadow-md">
+            📊
+          </div>
           <div>
-            <span className="text-xs font-black text-slate-900 block">
-              {isAvailableToday ? '🟢 Open / Available Today' : '🔴 Closed / Busy'}
-            </span>
-            <span className="text-[10px] text-slate-400 font-medium">
-              {isAvailableToday ? 'Nearby users can call you' : 'Hidden from active searches'}
-            </span>
+            <h1 className="text-sm font-black text-white leading-tight">
+              Business Hub (ग्राहक बातचीत)
+            </h1>
+            <p className="text-[10px] text-amber-300 font-bold">
+              Inquiries, Buyer Leads & Voice Assistant
+            </p>
           </div>
         </div>
+
         <button
           type="button"
-          onClick={() => setIsAvailableToday(!isAvailableToday)}
-          className={`px-3 py-1 text-xs font-bold rounded-xl transition ${
-            isAvailableToday ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'
-          }`}
+          onClick={onBack}
+          className="text-xs bg-white/15 hover:bg-white/25 text-white px-3 py-1.5 rounded-xl font-bold active:scale-95 transition cursor-pointer"
         >
-          {isAvailableToday ? 'Go Busy' : 'Go Online'}
+          ← Back
         </button>
       </div>
 
-      {/* Tailored Form Inputs */}
-      <form onSubmit={handlePublish} className="bg-white p-4 rounded-3xl border border-slate-200 shadow-sm space-y-3.5">
-        <div>
-          <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">
-            {selectedTrade.workspaceType === 'SERVICE_WAGE' && 'सेवा या हुनर का नाम (Service / Skill Title)'}
-            {selectedTrade.workspaceType === 'RETAIL_CATALOG' && 'प्रोडक्ट का नाम (Product Name)'}
-            {selectedTrade.workspaceType === 'CONTRACT_FIRM' && 'फ़र्म / पैकेज नाम (Firm / Package Name)'}
-            {selectedTrade.workspaceType === 'P2P_QUICK' && 'सामान का नाम (Item Title)'}
-          </label>
-          <input
-            type="text"
-            required
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder={
-              selectedTrade.workspaceType === 'SERVICE_WAGE'
-                ? 'उदा. Single Tap Repair & Pipe Fitting'
-                : 'उदा. Pure Cotton Saree - New Arrival'
-            }
-            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-bold outline-none focus:border-indigo-600"
-          />
+      {/* 🌟 2. VOICE MODE ACCESSIBILITY CONTROLLER SWITCH */}
+      <div className={`p-3.5 rounded-2xl border transition-all duration-300 flex items-center justify-between shadow-lg ${
+        isVoiceMode
+          ? 'bg-gradient-to-r from-amber-500/20 via-orange-500/20 to-amber-600/20 border-amber-400/80 ring-2 ring-amber-400/30'
+          : 'bg-slate-900/90 border-slate-800'
+      }`}>
+        <div className="flex items-center space-x-2.5">
+          <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-lg font-black transition ${
+            isVoiceMode ? 'bg-amber-400 text-slate-950 shadow-md animate-pulse' : 'bg-slate-800 text-slate-400'
+          }`}>
+            🎙️
+          </div>
+          <div>
+            <div className="flex items-center space-x-1.5">
+              <span className="text-xs font-black text-white">
+                आवाज़ मोड (Voice Assistant)
+              </span>
+              {isVoiceMode && (
+                <span className="bg-amber-400 text-slate-950 text-[8px] font-black px-1.5 py-0.2 rounded-full uppercase">
+                  Active
+                </span>
+              )}
+            </div>
+            <p className="text-[10px] text-slate-300 font-medium">
+              संदेश बोलकर सुनें और बोलकर जवाब दें
+            </p>
+          </div>
         </div>
 
-        {/* Pricing Layout */}
-        <div className="grid grid-cols-2 gap-2">
-          <div>
-            <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">
-              {selectedTrade.pricingLabel}
-            </label>
-            <input
-              type="number"
-              required
-              value={price}
-              onChange={(e) => setPrice(e.target.value)}
-              placeholder="₹ 150"
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold outline-none focus:border-indigo-600"
-            />
+        {/* Toggle Switch */}
+        <button
+          type="button"
+          onClick={toggleVoiceMode}
+          className={`w-12 h-6.5 rounded-full p-0.5 transition duration-300 cursor-pointer flex items-center ${
+            isVoiceMode ? 'bg-amber-400 justify-end' : 'bg-slate-700 justify-start'
+          }`}
+          title="Toggle Voice Mode"
+        >
+          <div className="w-5.5 h-5.5 rounded-full bg-slate-950 shadow-md"></div>
+        </button>
+      </div>
+
+      {/* 🌟 3. VOICE-GUIDED SUMMARY & METRICS TILES */}
+      <div className="space-y-2">
+        {isVoiceMode && (
+          <button
+            type="button"
+            onClick={handleReadFullSummary}
+            className="w-full py-2.5 bg-gradient-to-r from-amber-400 to-yellow-400 text-slate-950 rounded-2xl font-black text-xs shadow-md active:scale-98 transition flex items-center justify-center space-x-2 cursor-pointer"
+          >
+            <span>{speakingId === 'dashboard-summary' ? '🔊 बोल रहा है...' : '🔈 पूरा हिसाब बोलकर सुनें'}</span>
+          </button>
+        )}
+
+        <div className="grid grid-cols-3 gap-2">
+          <div className="bg-slate-900/90 p-3 rounded-2xl border border-slate-800 text-center space-y-0.5 shadow-md">
+            <span className="text-[10px] text-slate-400 font-black uppercase tracking-wider block">
+              Active Ads
+            </span>
+            <span className="text-lg font-black text-amber-400">{myListings.length}</span>
+            <span className="text-[9px] text-emerald-400 font-bold block">● Live</span>
           </div>
 
-          {selectedTrade.hasDiscountCalc ? (
-            <div>
-              <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">
-                MRP (छूट दिखाने के लिए)
-              </label>
-              <input
-                type="number"
-                value={mrp}
-                onChange={(e) => setMrp(e.target.value)}
-                placeholder="₹ 299"
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold outline-none"
-              />
+          <div className="bg-slate-900/90 p-3 rounded-2xl border border-slate-800 text-center space-y-0.5 shadow-md">
+            <span className="text-[10px] text-slate-400 font-black uppercase tracking-wider block">
+              Interested
+            </span>
+            <span className="text-lg font-black text-cyan-400">🔥 {totalInterests}</span>
+            <span className="text-[9px] text-cyan-300 font-bold block">Buyers</span>
+          </div>
+
+          <div className="bg-slate-900/90 p-3 rounded-2xl border border-slate-800 text-center space-y-0.5 shadow-md">
+            <span className="text-[10px] text-slate-400 font-black uppercase tracking-wider block">
+              Questions
+            </span>
+            <span className="text-lg font-black text-rose-400">💬 {pendingInquiriesCount}</span>
+            <span className="text-[9px] text-rose-300 font-bold block">Need Reply</span>
+          </div>
+        </div>
+      </div>
+
+      {/* 🌟 4. NAVIGATION TABS */}
+      <div className="flex bg-slate-900/90 p-1 rounded-2xl border border-slate-800 shadow-inner">
+        <button
+          type="button"
+          onClick={() => setActiveTab('inquiries')}
+          className={`flex-1 py-2 rounded-xl text-xs font-black transition cursor-pointer flex items-center justify-center space-x-1.5 ${
+            activeTab === 'inquiries'
+              ? 'bg-amber-400 text-slate-950 shadow-md'
+              : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <span>💬 Customer Queries</span>
+          {pendingInquiriesCount > 0 && (
+            <span className="w-4 h-4 rounded-full bg-rose-600 text-white text-[9px] font-black flex items-center justify-center">
+              {pendingInquiriesCount}
+            </span>
+          )}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('listings')}
+          className={`flex-1 py-2 rounded-xl text-xs font-black transition cursor-pointer flex items-center justify-center space-x-1.5 ${
+            activeTab === 'listings'
+              ? 'bg-amber-400 text-slate-950 shadow-md'
+              : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <span>📦 My Listings ({myListings.length})</span>
+        </button>
+      </div>
+
+      {/* 🌟 5. TAB CONTENT: CUSTOMER INQUIRIES WITH AUDIO & MIC CAPABILITIES */}
+      {activeTab === 'inquiries' && (
+        <section className="space-y-3">
+          <div className="flex items-center justify-between px-1">
+            <h2 className="text-xs font-black text-slate-300 uppercase tracking-wider">
+              Buyer Questions & Offers (ग्राहक के सवाल)
+            </h2>
+            <span className="text-[10px] text-slate-500">
+              {isVoiceMode ? 'Tap 🔊 to listen' : 'Instant direct reply'}
+            </span>
+          </div>
+
+          {userInquiries.length === 0 ? (
+            <div className="bg-slate-900/60 p-8 rounded-2xl border border-slate-800 text-center text-slate-400 space-y-1">
+              <span className="text-3xl block">📭</span>
+              <p className="text-xs font-bold text-slate-300">No customer questions yet.</p>
+              <p className="text-[10px]">When local buyers ask about your items, they appear here.</p>
             </div>
           ) : (
-            <div>
-              <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">
-                WhatsApp Phone
-              </label>
-              <input
-                type="tel"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                placeholder="10-digit number"
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold outline-none"
-              />
-            </div>
-          )}
-        </div>
+            userInquiries.map((inq) => {
+              const isSpeakingThis = speakingId === inq.id;
+              const isListeningThis = listeningId === inq.id;
 
-        {/* Location Landmark */}
-        <div>
-          <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">
-            Stand / Area / Landmark
-          </label>
-          <input
-            type="text"
-            value={locationArea}
-            onChange={(e) => setLocationArea(e.target.value)}
-            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold outline-none"
-          />
-        </div>
+              return (
+                <div
+                  key={inq.id}
+                  className={`bg-white rounded-2xl border p-3.5 space-y-3 shadow-md transition ${
+                    isSpeakingThis ? 'ring-2 ring-amber-400 border-amber-400' : 'border-slate-200'
+                  }`}
+                >
+                  {/* Context Item Header */}
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                    <div className="flex items-center space-x-2.5 min-w-0">
+                      <img
+                        src={inq.listingImage || 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=200'}
+                        alt={inq.listingTitle}
+                        className="w-10 h-10 rounded-xl object-cover border border-slate-200 shrink-0"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <h3 className="text-xs font-black text-slate-900 truncate">
+                          {inq.listingTitle}
+                        </h3>
+                        <span className="text-[10px] font-bold text-amber-600 block">
+                          {inq.listingPrice}
+                        </span>
+                      </div>
+                    </div>
 
-        {/* Camera Upload Section */}
-        <div>
-          <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">
-            फ़ोटो जोड़ें (Camera Photos - Auto Compressed)
-          </label>
-          <label className="border-2 border-dashed border-indigo-200 hover:border-indigo-400 bg-indigo-50/20 rounded-2xl p-3 flex items-center justify-center space-x-2 cursor-pointer active:scale-95 transition">
-            <span className="text-base">📸</span>
-            <span className="text-xs font-bold text-indigo-700">फ़ोटो खींचें या अपलोड करें</span>
-            <input
-              type="file"
-              accept="image/*"
-              multiple
-              capture="environment"
-              onChange={handlePhotoCapture}
-              className="hidden"
-            />
-          </label>
+                    {/* 🔊 Audio Play Button for Question */}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        speakText(
+                          `ग्राहक ${inq.userName} ने पूछा है: ${inq.text}`,
+                          inq.id
+                        )
+                      }
+                      className={`px-2.5 py-1.5 rounded-xl font-black text-[10px] flex items-center space-x-1 shrink-0 transition active:scale-90 cursor-pointer ${
+                        isSpeakingThis
+                          ? 'bg-amber-400 text-slate-950 ring-2 ring-amber-400/40 animate-bounce'
+                          : 'bg-slate-100 hover:bg-amber-100 text-slate-800 border border-slate-200'
+                      }`}
+                      title="बोलकर सुनें (Listen aloud)"
+                    >
+                      <span>{isSpeakingThis ? '🔊' : '🔈'}</span>
+                      <span>{isSpeakingThis ? 'सुन रहे हैं' : 'सुनाएँ'}</span>
+                    </button>
+                  </div>
 
-          {compressing && (
-            <p className="text-[10px] text-amber-600 font-bold mt-1.5 animate-pulse">
-              ⚡ Compressing image on-device...
-            </p>
-          )}
+                  {/* Buyer Query Message */}
+                  <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200/80 space-y-1">
+                    <div className="flex items-center justify-between text-[10px]">
+                      <span className="font-extrabold text-slate-900">👤 {inq.userName}</span>
+                      <span className="text-slate-400 font-semibold">{inq.timestamp}</span>
+                    </div>
+                    <p className="text-xs text-slate-800 font-medium">"{inq.text}"</p>
+                  </div>
 
-          {images.length > 0 && (
-            <div className="flex space-x-2 mt-2">
-              {images.map((src, i) => (
-                <div key={i} className="relative w-14 h-14 rounded-xl overflow-hidden border border-slate-200">
-                  <img src={src} alt="Thumb" className="w-full h-full object-cover" />
-                  <button
-                    type="button"
-                    onClick={() => setImages(images.filter((_, idx) => idx !== i))}
-                    className="absolute top-0.5 right-0.5 bg-black/70 text-white rounded-full w-4 h-4 flex items-center justify-center text-[8px]"
-                  >
-                    ✕
-                  </button>
+                  {/* Existing Reply */}
+                  {inq.sellerReply ? (
+                    <div className="bg-amber-50 border-l-3 border-amber-500 p-2.5 rounded-r-xl space-y-0.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[9px] font-black text-amber-900">
+                          👑 Your Reply ({inq.sellerReply.timestamp}):
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => speakText(`आपने जवाब दिया: ${inq.sellerReply.text}`, `reply-${inq.id}`)}
+                          className="text-[9px] text-amber-700 font-bold hover:underline cursor-pointer"
+                        >
+                          🔈 सुनें
+                        </button>
+                      </div>
+                      <p className="text-xs text-slate-900 font-semibold">{inq.sellerReply.text}</p>
+                    </div>
+                  ) : (
+                    /* Reply Section with Voice Dictation (Mic) */
+                    <div className="space-y-2 pt-1">
+                      {/* Quick Response Chips */}
+                      <div className="flex items-center space-x-1.5 overflow-x-auto pb-1 scrollbar-none">
+                        {['हाँ, उपलब्ध है', 'दुकान पर देख सकते हैं', 'कीमत फिक्स है', 'WhatsApp करें'].map((chip) => (
+                          <button
+                            key={chip}
+                            type="button"
+                            onClick={() => handleQuickPreset(inq.id, chip)}
+                            className="text-[10px] bg-slate-100 hover:bg-amber-100 text-slate-700 hover:text-amber-950 px-2 py-1 rounded-lg font-bold shrink-0 transition border border-slate-200 cursor-pointer flex items-center space-x-1"
+                          >
+                            <span>+</span>
+                            <span>{chip}</span>
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Reply Input + Mic Button + Send */}
+                      <div className="flex items-center space-x-1.5">
+                        {/* 🎙️ Big Tactile Mic Button for Dictation */}
+                        <button
+                          type="button"
+                          onClick={() => handleStartVoiceDictation(inq.id)}
+                          className={`w-10 h-10 rounded-xl flex items-center justify-center text-base font-black transition active:scale-90 cursor-pointer shrink-0 shadow-sm ${
+                            isListeningThis
+                              ? 'bg-rose-600 text-white ring-4 ring-rose-400/50 animate-ping'
+                              : isVoiceMode
+                              ? 'bg-amber-400 text-slate-950 ring-2 ring-amber-400/50'
+                              : 'bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300'
+                          }`}
+                          title="बोलकर लिखें (Speak to reply)"
+                        >
+                          {isListeningThis ? '⏹️' : '🎙️'}
+                        </button>
+
+                        <input
+                          type="text"
+                          value={replyInputs[inq.id] || ''}
+                          onChange={(e) =>
+                            setReplyInputs({ ...replyInputs, [inq.id]: e.target.value })
+                          }
+                          placeholder={isListeningThis ? 'बोलिए, आवाज़ रिकॉर्ड हो रही है...' : 'Type or use 🎙️ mic to speak...'}
+                          className={`flex-1 px-3 py-2 border rounded-xl text-xs font-semibold focus:outline-none transition ${
+                            isListeningThis
+                              ? 'bg-rose-50 border-rose-400 text-rose-950 placeholder-rose-400'
+                              : 'bg-slate-50 border-slate-300 text-slate-900 focus:border-amber-500 focus:bg-white'
+                          }`}
+                        />
+
+                        <button
+                          type="button"
+                          onClick={() => handleSendReply(inq.listingId, inq.id, inq.listingTitle)}
+                          className="px-3.5 py-2 bg-slate-950 hover:bg-slate-900 text-white rounded-xl font-black text-xs active:scale-95 transition cursor-pointer shrink-0 shadow-md"
+                        >
+                          Send
+                        </button>
+                      </div>
+
+                      {isListeningThis && (
+                        <p className="text-[10px] text-rose-600 font-bold text-center animate-pulse">
+                          ● माइक चालू है: साफ़ आवाज़ में अपना जवाब बोलें...
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
-              ))}
-            </div>
+              );
+            })
           )}
-        </div>
+        </section>
+      )}
 
-        {/* Publish Action */}
-        <button
-          type="submit"
-          className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black py-3 rounded-2xl text-xs uppercase tracking-wider shadow-lg shadow-indigo-600/20 active:scale-95 transition"
-        >
-          तुरंत लाइव करें (Publish Now)
-        </button>
-      </form>
-    </div>
+      {/* 🌟 6. TAB CONTENT: MANAGE ACTIVE LISTINGS WITH AUDIO LABELS */}
+      {activeTab === 'listings' && (
+        <section className="space-y-3">
+          <div className="flex items-center justify-between px-1">
+            <h2 className="text-xs font-black text-slate-300 uppercase tracking-wider">
+              Manage Your Listings (आपकी लिस्टिंग्स)
+            </h2>
+            <span className="text-[10px] text-amber-400 font-bold">● All Active</span>
+          </div>
+
+          <div className="space-y-2.5">
+            {myListings.map((item) => (
+              <div
+                key={item.id}
+                className="bg-white rounded-2xl border border-slate-200 p-3 flex items-center justify-between shadow-sm hover:shadow-md transition"
+              >
+                <div className="flex items-center space-x-3 min-w-0">
+                  <img
+                    src={item.image || (item.images && item.images[0]) || 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=200'}
+                    alt={item.title || item.name}
+                    className="w-14 h-14 rounded-xl object-cover border border-slate-200 shrink-0"
+                  />
+                  <div className="min-w-0">
+                    <span className="text-[9px] font-black uppercase text-cyan-800 bg-cyan-50 px-1.5 py-0.5 rounded-md inline-block">
+                      {item.category} • {item.subCategory}
+                    </span>
+                    <h3 className="text-xs font-black text-slate-900 truncate mt-0.5">
+                      {item.title || item.name}
+                    </h3>
+                    <p className="text-[11px] font-bold text-amber-600">
+                      {item.price || item.rates || 'Rate on Request'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-col items-end space-y-1.5 shrink-0 pl-2">
+                  <span className="text-[10px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                    🟢 Active
+                  </span>
+
+                  {/* 🔊 Audio Item Details */}
+                  {isVoiceMode && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        speakText(
+                          `विज्ञापन: ${item.title || item.name}, कीमत: ${item.price || 'उपलब्ध'}, ${item.interestCount || 4} लोगों ने रुचि दिखाई है।`,
+                          `item-${item.id}`
+                        )
+                      }
+                      className="text-[9px] bg-slate-100 hover:bg-amber-100 text-slate-700 px-2 py-0.5 rounded-lg border border-slate-200 font-bold"
+                    >
+                      🔈 विवरण सुनें
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+    </main>
   );
 }

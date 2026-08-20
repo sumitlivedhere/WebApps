@@ -136,57 +136,77 @@ export const TAXONOMY_REGISTRY = [
   },
   {
     id: 'vehicles',
-    name: 'Vehicles / Motors (गाड़ी व बाइक)',
+    name: 'New Vehicles & Showrooms (नई गाड़ी व शोरूम)',
     icon: '🚗',
     bucketKey: 'listings',
     subCategories: [
-      { id: 'cars', name: 'Used Cars' },
-      { id: 'bikes', name: 'Bikes & Scooters' },
-      { id: 'commercial-vehicles', name: 'Commercial & Tractors' },
+      { id: 'car-showrooms', name: 'New Car Showrooms (कार शोरूम)' },
+      { id: 'two-wheeler-dealers', name: 'Bike & Scooter Dealerships (बाइक व स्कूटी शोरूम)' },
+      { id: 'ev-showrooms', name: 'Electric Vehicles / EV (इलेक्ट्रिक वाहन)' },
+      { id: 'commercial-dealers', name: 'Tractors & Commercial Dealerships (ट्रैक्टर व कमर्शियल)' },
     ],
   },
-  {
+{
     id: 'electronics',
-    name: 'Electronics / Gadgets (इलेक्ट्रॉनिक्स)',
+    name: 'Electronics & Gadgets (इलेक्ट्रॉनिक्स व गैजेट्स)',
     icon: '📱',
     bucketKey: 'listings',
     subCategories: [
-      { id: 'smartphones', name: 'Smartphones' },
-      { id: 'laptops', name: 'Laptops & Computers' },
-      { id: 'appliances', name: 'Home Appliances' },
+      { id: 'smartphones-tablets', name: 'Smartphones & Tablets (मोबाइल व टैबलेट)' },
+      { id: 'laptops-computers', name: 'Laptops & Computers (लैपटॉप व कंप्यूटर)' },
+      { id: 'home-appliances', name: 'TV, AC & Home Appliances (टीवी, फ्रिज व एसी)' },
+      { id: 'audio-wearables', name: 'Audio, Earbuds & Smartwatches (ईयरबड्स व घड़ियां)' },
+      { id: 'cameras-cctv', name: 'Cameras & CCTV Security (कैमरा व सीसीटीवी)' },
+      { id: 'printers-accessories', name: 'Printers & Accessories (प्रिंटर व कंप्यूटर पार्ट्स)' },
+      { id: 'service-centers', name: 'Brand Service Centers (ऑथराइज्ड सर्विस सेंटर)' },
     ],
   },
-  {
-    id: 'fashion',
-    name: 'Fashion / Lifestyle (फैशन)',
-    icon: '👕',
-    bucketKey: 'listings',
-    subCategories: [
-      { id: 'mens-wear', name: "Men's Wear" },
-      { id: 'womens-wear', name: "Women's Wear" },
-      { id: 'kids-wear', name: "Kids & Baby Wear" },
-    ],
-  },
+  // Inside TAXONOMY_REGISTRY in src/data/taxonomyRegistry.js
+{
+  id: 'fashion',
+  name: 'Fashion & Lifestyle (फैशन व लाइफस्टाइल)',
+  icon: '✨',
+  bucketKey: 'listings',
+  subCategories: [
+    { id: 'womens-ethnic', name: 'Sarees, Suits & Kurtis (साड़ी, सूट व कुर्ती)', icon: '🥻', tag: 'TRENDING' },
+    { id: 'mens-ethnic', name: 'Kurta Pajama & Sherwani (कुर्ता पायजामा व शेरवानी)', icon: '🤵', tag: 'ROYAL' },
+    { id: 'streetwear-western', name: 'Jeans, Oversized Tees & Western (जींस व वेस्टर्न)', icon: '👕', tag: 'YOUTH' },
+    { id: 'footwear-sneakers', name: 'Sneakers, Sports Shoes & Mojaris (जूते व मोजड़ी)', icon: '👟', tag: 'HOT' },
+    { id: 'bridal-festive', name: 'Bridal Lehengas & Sherwani Rent (ब्राइडल व रेंट)', icon: '👑', tag: 'WEDDING' },
+    { id: 'boutiques-tailoring', name: 'Boutique Tailoring & Stitching (बुटीक व सिलाई)', icon: '✂️', tag: 'CUSTOM' },
+    { id: 'accessories-bags', name: 'Watches, Perfumes, Bags & Eyewear (घड़ियां व चश्मे)', icon: '🕶️', tag: 'LUXURY' },
+    { id: 'winterwear', name: 'Jackets, Blazers & Hoodies (जैकेट व ब्लेज़र)', icon: '🧥', tag: 'SEASONAL' },
+    { id: 'kids-fashion', name: 'Kids Fancy & Daily Wear (बच्चों के कपड़े)', icon: '👶', tag: 'KIDS' },
+    { id: 'preloved-thrift', name: 'Pre-Loved & Branded Thrift (थ्रिफ्ट व पुराना फैशन)', icon: '♻️', tag: 'DEALS' },
+  ],
+},
   {
     id: 'furniture',
-    name: 'Furniture / Decor (फर्नीचर)',
+    name: 'Furniture & Decor (फर्नीचर व इंटीरियर)',
     icon: '🛋️',
     bucketKey: 'listings',
     subCategories: [
-      { id: 'sofas', name: 'Sofas & Couches' },
-      { id: 'beds', name: 'Beds & Mattresses' },
-      { id: 'tables', name: 'Dining & Office Tables' },
+      { id: 'modular-kitchen', name: 'Modular Kitchen & Wardrobes (मॉड्यूलर किचन व काम)' },
+      { id: 'interior-decorators', name: 'Interior Decorators & Designers (इंटीरियर डेकोरेटर्स)' },
+      { id: 'glass-aluminium', name: 'Glass, Aluminium & UPVC (ग्लास व एल्युमिनियम वर्क)' },
+      { id: 'sofas-living', name: 'Sofas, Recliners & Living (सोफा व बैठक)' },
+      { id: 'beds-wardrobes', name: 'Beds, Almirah & Woodwork (बेड व अलमारी)' },
+      { id: 'dining-tables', name: 'Dining, Study & Office Desks (डाइनिंग व टेबल)' },
+      { id: 'home-decor-curtains', name: 'Curtains, Blinds & Wallpaper (पर्दे व वॉलपेपर)' },
     ],
   },
   {
     id: 'market',
-    name: 'Market / Retail Products (बाज़ार उत्पाद)',
+    name: 'Market & Retail (लोकल बाज़ार व डील्स)',
     icon: '🛒',
     bucketKey: 'marketProducts',
     subCategories: [
-      { id: 'groceries', name: 'Groceries & Kirana' },
-      { id: 'fruits-veg', name: 'Fresh Fruits & Vegetables' },
-      { id: 'dairy', name: 'Dairy & Milk Products' },
+      { id: 'new-openings', name: 'New Openings & Launches (नई दुकानें व उद्घाटन)' },
+      { id: 'sales-clearance', name: 'Mega Sales & Clearance (सेल व भारी छूट)' },
+      { id: 'special-deals', name: 'Special Deals & Offers (खास ऑफर्स व डील्स)' },
+      { id: 'wholesalers', name: 'Wholesalers & Bulk Supply (थोक विक्रेता व मंडी)' },
+      { id: 'brand-showrooms', name: 'Brand Showrooms & Outlets (ब्रांडेड शोरूम)' },
+      { id: 'miscellaneous', name: 'Miscellaneous Retail (अन्य बाज़ार स्टोर्स)' },
     ],
   },
   {
@@ -217,9 +237,19 @@ export function getCategoryById(catId) {
   return TAXONOMY_REGISTRY.find((c) => c.id === catId) || TAXONOMY_REGISTRY[0];
 }
 
+// In src/data/taxonomyRegistry.js:
 export function sanitizeSubCategoryId(catId, subCatId) {
   const cat = getCategoryById(catId);
   const target = String(subCatId || '').toLowerCase().trim();
-  const match = cat.subCategories.find((s) => s.id === target || target.includes(s.id));
-  return match ? match.id : cat.subCategories[0].id;
+  
+  // ✅ Keep 'all' or empty subcategories intact instead of forcing them to 'flats'
+  if (!target || target === 'all' || target === 'general') {
+    return 'all';
+  }
+  
+  const match = cat.subCategories.find(
+    (s) => s.id === target || target === s.id || target.includes(s.id)
+  );
+  
+  return match ? match.id : target;
 }

@@ -52,19 +52,21 @@ function ListingDiscussionThread({
   const handleExpressInterest = (e) => {
     e.stopPropagation();
     if (!hasExpressedInterest) {
-      hyperlocalStore.incrementInterest(listingId, interestCount);
+      hyperlocalStore.incrementInterest(listingId, interestCount, listingTitle, sellerName);
       setHasExpressedInterest(true);
 
-      if (onNewNotification) {
-        onNewNotification({
-          id: Date.now(),
-          tag: '🔥 New Interest',
-          title: `Someone is interested in "${listingTitle || 'your listing'}"`,
-          message: 'A local buyer has saved and shown interest in this item.',
-          time: 'Just now',
-          isRead: false,
-        });
-      }
+      const notifPayload = {
+        id: Date.now(),
+        tag: 'INTEREST REGISTERED',
+        title: `Interested in "${listingTitle || 'Listing'}"`,
+        message: `${sellerName || 'The seller'} was notified of your interest. Total interested: ${interests + 1}`,
+        time: 'Just now',
+        type: 'interest',
+        targetId: listingId,
+      };
+
+      hyperlocalStore.addNotification(notifPayload);
+      if (onNewNotification) onNewNotification(notifPayload);
     }
   };
 
@@ -75,27 +77,29 @@ function ListingDiscussionThread({
     const questionText = newQuestion.trim();
     const newCommentObj = {
       id: `c-${Date.now()}`,
-      userName: 'Alwar Local Buyer',
-      userArea: 'Town Area',
+      userName: 'Town Member',
+      userArea: 'Local Area',
       text: questionText,
       timestamp: 'Just now',
       isPublic: true,
       sellerReply: null,
     };
 
-    hyperlocalStore.addThreadComment(listingId, newCommentObj);
+    hyperlocalStore.addThreadComment(listingId, newCommentObj, listingTitle);
     setNewQuestion('');
 
-    if (onNewNotification) {
-      onNewNotification({
-        id: Date.now(),
-        tag: '💬 New Query Received',
-        title: `Question on "${listingTitle || 'your listing'}"`,
-        message: `A buyer asked: "${questionText.slice(0, 45)}..."`,
-        time: 'Just now',
-        isRead: false,
-      });
-    }
+    const notifPayload = {
+      id: Date.now(),
+      tag: 'NEW COMMENT',
+      title: `Query on "${listingTitle || 'Listing'}"`,
+      message: `Buyer asked: "${questionText.slice(0, 45)}..."`,
+      time: 'Just now',
+      type: 'comment',
+      targetId: listingId,
+    };
+
+    hyperlocalStore.addNotification(notifPayload);
+    if (onNewNotification) onNewNotification(notifPayload);
   };
 
   const handlePostSellerReply = (commentId) => {
@@ -109,53 +113,51 @@ function ListingDiscussionThread({
       sellerName: sellerName || 'Verified Seller',
     };
 
-    hyperlocalStore.addSellerReply(listingId, commentId, replyObj);
+    hyperlocalStore.addSellerReply(listingId, commentId, replyObj, listingTitle);
 
-    if (onNewNotification) {
-      onNewNotification({
-        id: Date.now(),
-        tag: '👑 Seller Replied',
-        title: `${sellerName || 'Seller'} replied to your question!`,
-        message: `Reply: "${cleanReply.slice(0, 45)}..."`,
-        time: 'Just now',
-        isRead: false,
-      });
-    }
+    const notifPayload = {
+      id: Date.now(),
+      tag: 'SELLER REPLIED',
+      title: `${sellerName || 'Seller'} replied to your question!`,
+      message: `Reply: "${cleanReply.slice(0, 45)}..."`,
+      time: 'Just now',
+      type: 'reply',
+      targetId: listingId,
+    };
+
+    hyperlocalStore.addNotification(notifPayload);
+    if (onNewNotification) onNewNotification(notifPayload);
 
     setReplyText((prev) => ({ ...prev, [commentId]: '' }));
     setActiveReplyId(null);
   };
 
-  const handleToggleVisibility = (commentId) => {
-    hyperlocalStore.toggleCommentVisibility(listingId, commentId);
-  };
-
   return (
     <>
       {/* 🌟 1. REELS-STYLE FLOATING RIGHT-RAIL OVERLAY */}
-      <div className="absolute right-2.5 bottom-3 z-20 flex flex-col items-center space-y-2.5">
+      <div className="absolute right-2.5 bottom-3 z-20 flex flex-col items-center space-y-2">
         <button
           type="button"
           onClick={handleExpressInterest}
-          className={`flex flex-col items-center justify-center w-11 h-11 rounded-full backdrop-blur-md border shadow-lg active:scale-90 transition-all cursor-pointer ${
+          className={`flex flex-col items-center justify-center w-10 h-10 rounded-2xl backdrop-blur-md border shadow-lg active:scale-90 transition cursor-pointer ${
             hasExpressedInterest
-              ? 'bg-amber-400 border-amber-300 text-slate-950 scale-105 ring-2 ring-amber-300/50'
-              : 'bg-slate-950/75 hover:bg-slate-950/90 border-white/20 text-white'
+              ? 'bg-amber-400 border-amber-300 text-slate-950 scale-105 ring-2 ring-amber-300/50 shadow-amber-400/30'
+              : 'bg-slate-950/80 hover:bg-slate-950 border-white/20 text-white'
           }`}
-          title="I'm Interested"
+          title="Express Interest"
         >
-          <span className="text-base">🔥</span>
-          <span className="text-[9px] font-black leading-none mt-0.5">{interests}</span>
+          <span className="text-sm">⭐</span>
+          <span className="text-[8px] font-black leading-none mt-0.5">{interests}</span>
         </button>
 
         <button
           type="button"
           onClick={handleOpenDiscussion}
-          className="flex flex-col items-center justify-center w-11 h-11 rounded-full bg-slate-950/75 hover:bg-slate-950/90 backdrop-blur-md border border-white/20 text-white shadow-lg active:scale-90 transition-all cursor-pointer"
-          title="Ask Question / View Discussions"
+          className="flex flex-col items-center justify-center w-10 h-10 rounded-2xl bg-slate-950/80 hover:bg-slate-950 backdrop-blur-md border border-white/20 text-white shadow-lg active:scale-90 transition cursor-pointer"
+          title="Ask Question / View Q&A"
         >
-          <span className="text-base">💬</span>
-          <span className="text-[9px] font-black leading-none mt-0.5">{comments.length}</span>
+          <span className="text-sm">💬</span>
+          <span className="text-[8px] font-black leading-none mt-0.5">{comments.length}</span>
         </button>
       </div>
 
@@ -171,15 +173,15 @@ function ListingDiscussionThread({
               onClick={(e) => e.stopPropagation()}
             >
               {/* DRAWER TOP BAR */}
-              <div className="px-4 py-3 bg-slate-950 text-white flex items-center justify-between shrink-0">
+              <div className="px-4 py-3 bg-slate-950 text-white flex items-center justify-between shrink-0 rounded-t-3xl">
                 <div className="flex items-center space-x-2">
                   <span className="text-xl">💬</span>
                   <div>
                     <h3 className="text-xs font-black text-white leading-tight">
-                      Sawal-Jawab & Offers ({comments.length})
+                      Q&A & Offers ({comments.length})
                     </h3>
-                    <p className="text-[10px] text-amber-300 font-bold">
-                      {listingTitle ? listingTitle.slice(0, 30) : 'Item Q&A'}
+                    <p className="text-[10px] text-amber-300 font-bold line-clamp-1">
+                      {listingTitle || 'Listing Discussion'}
                     </p>
                   </div>
                 </div>
@@ -211,91 +213,76 @@ function ListingDiscussionThread({
                 {comments.length === 0 ? (
                   <div className="text-center py-10 text-slate-400">
                     <span className="text-3xl block mb-1">🗨️</span>
-                    <p className="font-bold text-xs text-slate-700">Abhi tak koi sawal nahi hai.</p>
-                    <p className="text-[10px] text-slate-500 mt-0.5">Niche box me apna sawal ya offer type karein!</p>
+                    <p className="font-bold text-xs text-slate-700">No questions asked yet.</p>
+                    <p className="text-[10px] text-slate-500 mt-0.5">Type your question or offer in the box below!</p>
                   </div>
                 ) : (
-                  comments.map((comm) => {
-                    if (!comm.isPublic && !isCurrentUserSeller) return null;
-
-                    return (
-                      <div
-                        key={comm.id}
-                        className="p-3 bg-slate-50 rounded-2xl border border-slate-200 space-y-2"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center space-x-1.5">
-                            <span className="font-extrabold text-slate-900">{comm.userName}</span>
-                            <span className="text-[9px] text-slate-400">• {comm.userArea}</span>
-                          </div>
-                          <div className="flex items-center space-x-1.5">
-                            <span className="text-[9px] text-slate-400 font-semibold">{comm.timestamp}</span>
-                            {isCurrentUserSeller && (
-                              <button
-                                type="button"
-                                onClick={() => handleToggleVisibility(comm.id)}
-                                className="text-[9px] font-black px-1.5 py-0.5 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-md cursor-pointer"
-                              >
-                                {comm.isPublic ? '🌐 Public' : '🔒 Private'}
-                              </button>
-                            )}
-                          </div>
+                  comments.map((comm) => (
+                    <div
+                      key={comm.id}
+                      className="p-3 bg-slate-50 rounded-2xl border border-slate-200 space-y-1.5"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-1.5">
+                          <span className="font-extrabold text-slate-900">{comm.userName}</span>
+                          <span className="text-[9px] text-slate-400">• {comm.userArea}</span>
                         </div>
+                        <span className="text-[9px] text-slate-400 font-semibold">{comm.timestamp}</span>
+                      </div>
 
-                        <p className="text-slate-800 font-medium text-xs leading-snug">
-                          {comm.text}
-                        </p>
+                      <p className="text-slate-800 font-medium text-xs leading-snug">
+                        {comm.text}
+                      </p>
 
-                        {comm.sellerReply && (
-                          <div className="ml-2.5 p-2.5 bg-indigo-50/80 border-l-3 border-indigo-600 rounded-r-xl space-y-1">
-                            <div className="flex items-center justify-between">
-                              <span className="text-[10px] font-black text-indigo-900">
-                                👑 {comm.sellerReply.sellerName} (Author Reply)
-                              </span>
-                              <span className="text-[9px] text-indigo-400">{comm.sellerReply.timestamp}</span>
-                            </div>
-                            <p className="text-xs text-slate-800 font-semibold leading-snug">
-                              {comm.sellerReply.text}
-                            </p>
+                      {comm.sellerReply && (
+                        <div className="ml-2.5 p-2.5 bg-amber-50/80 border-l-3 border-amber-500 rounded-r-xl space-y-0.5">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-black text-amber-950">
+                              👑 {comm.sellerReply.sellerName} (Author Reply)
+                            </span>
+                            <span className="text-[9px] text-amber-600 font-semibold">{comm.sellerReply.timestamp}</span>
                           </div>
-                        )}
+                          <p className="text-xs text-slate-900 font-semibold leading-snug">
+                            {comm.sellerReply.text}
+                          </p>
+                        </div>
+                      )}
 
-                        {isCurrentUserSeller && !comm.sellerReply && (
-                          <div className="pt-1 border-t border-slate-200/60 mt-1">
-                            {activeReplyId === comm.id ? (
-                              <div className="flex space-x-1.5 mt-1.5">
-                                <input
-                                  ref={replyInputRef}
-                                  type="text"
-                                  value={replyText[comm.id] || ''}
-                                  onChange={(e) =>
-                                    setReplyText({ ...replyText, [comm.id]: e.target.value })
-                                  }
-                                  placeholder="Type your official reply..."
-                                  className="flex-1 p-2 bg-white border border-indigo-300 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() => handlePostSellerReply(comm.id)}
-                                  className="px-3.5 py-2 bg-slate-950 text-white rounded-xl font-bold text-xs shrink-0 active:scale-95 transition cursor-pointer"
-                                >
-                                  Reply
-                                </button>
-                              </div>
-                            ) : (
+                      {isCurrentUserSeller && !comm.sellerReply && (
+                        <div className="pt-1 border-t border-slate-200/60 mt-1">
+                          {activeReplyId === comm.id ? (
+                            <div className="flex space-x-1.5 mt-1.5">
+                              <input
+                                ref={replyInputRef}
+                                type="text"
+                                value={replyText[comm.id] || ''}
+                                onChange={(e) =>
+                                  setReplyText({ ...replyText, [comm.id]: e.target.value })
+                                }
+                                placeholder="Type your official reply..."
+                                className="flex-1 p-2 bg-white border border-amber-400 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500"
+                              />
                               <button
                                 type="button"
-                                onClick={() => handleOpenReplyBox(comm.id)}
-                                className="text-[11px] font-black text-indigo-700 hover:text-indigo-900 cursor-pointer"
+                                onClick={() => handlePostSellerReply(comm.id)}
+                                className="px-3.5 py-2 bg-slate-950 text-white rounded-xl font-bold text-xs shrink-0 active:scale-95 transition cursor-pointer"
                               >
-                                ↳ Reply to this query
+                                Reply
                               </button>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleOpenReplyBox(comm.id)}
+                              className="text-[11px] font-black text-amber-700 hover:text-amber-900 cursor-pointer"
+                            >
+                              ↳ Reply to this query
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))
                 )}
               </div>
 
@@ -309,12 +296,12 @@ function ListingDiscussionThread({
                   type="text"
                   value={newQuestion}
                   onChange={(e) => setNewQuestion(e.target.value)}
-                  placeholder="Apna sawal ya deal offer yahan likhein..."
-                  className="flex-1 p-3 bg-slate-100 border border-slate-300 focus:border-indigo-600 rounded-xl font-semibold text-slate-900 focus:outline-none focus:bg-white text-xs"
+                  placeholder="Ask a question or offer price..."
+                  className="flex-1 p-3 bg-slate-100 border border-slate-300 focus:border-amber-500 rounded-2xl font-semibold text-slate-900 focus:outline-none focus:bg-white text-xs"
                 />
                 <button
                   type="submit"
-                  className="px-4 py-3 bg-slate-950 hover:bg-slate-900 active:scale-95 text-white rounded-xl font-black text-xs shrink-0 transition cursor-pointer"
+                  className="px-4 py-3 bg-gradient-to-r from-amber-400 to-yellow-400 text-slate-950 active:scale-95 rounded-2xl font-black text-xs shrink-0 transition cursor-pointer shadow-md"
                 >
                   Send
                 </button>
