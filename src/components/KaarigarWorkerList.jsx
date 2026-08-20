@@ -1,171 +1,116 @@
-import React, { useState } from 'react';
+import React, { useMemo } from 'react';
 import ActionButtons from './common/ActionButtons';
 import ListingDiscussionThread from './common/ListingDiscussionThread';
 
 export default function KaarigarWorkerList({
   workers = [],
-  selectedTradeId = 'all',
+  selectedSubCategory = 'all',
   selectedCity = 'Alwar',
   searchQuery = '',
   onBack,
   onNewNotification,
 }) {
-  const [filterAvailability, setFilterAvailability] = useState('all'); // 'all' | 'available_now'
+ // Generic filter formula used across all sector feeds:
+const filteredItems = (items || []).filter((item) => {
+  // 1. City check
+  const loc = (item.location || item.city || '').toLowerCase();
+  const matchesCity = !city || loc.includes(city) || city.includes(loc) || !loc;
+  if (!matchesCity) return false;
 
-  const filteredWorkers = workers
-    .filter((worker) => {
-      if (selectedTradeId && selectedTradeId !== 'all') {
-        return worker.tradeId === selectedTradeId || worker.trade === selectedTradeId;
-      }
-      return true;
-    })
-    .filter((worker) => {
-      if (filterAvailability === 'available_now') {
-        return worker.isAvailableNow === true;
-      }
-      return true;
-    })
-    .filter((worker) => {
-      if (!searchQuery) return true;
-      const q = searchQuery.toLowerCase();
-      return (
-        worker.name?.toLowerCase().includes(q) ||
-        worker.trade?.toLowerCase().includes(q) ||
-        worker.location?.toLowerCase().includes(q) ||
-        worker.skills?.some((s) => s.toLowerCase().includes(q))
-      );
-    });
+  // 2. Deterministic Subcategory isolation
+  const targetSub = (selectedSubCategory || 'all').toLowerCase().trim();
+  const itemSub = (item.subCategory || item.trade || item.vehicleType || item.profession || '').toLowerCase().trim();
 
+  // If viewing 'all', show all items in this sector; otherwise enforce exact ID match
+  const matchesSub = targetSub === 'all' || itemSub === targetSub;
+  if (!matchesSub) return false;
+
+  // 3. Search query check
+  if (!q) return true;
+  return item.name?.toLowerCase().includes(q) || item.title?.toLowerCase().includes(q);
+});
   return (
     <main className="p-3.5 space-y-3.5 relative z-10 animate-fade-in text-slate-800">
-      {/* 1. TOP HEADER & FILTER BAR */}
-      <div className="bg-white/85 backdrop-blur-md p-3.5 rounded-2xl border border-slate-200/80 shadow-sm flex items-center justify-between">
+      <div className="bg-white/85 backdrop-blur-md p-3.5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
         <div>
-          <h2 className="text-sm font-black text-slate-900 capitalize leading-tight">
-            {selectedTradeId !== 'all' ? selectedTradeId : 'All Kaarigar Workers'}
+          <h2 className="text-sm font-black text-slate-900 capitalize">
+            {selectedSubCategory !== 'all' ? selectedSubCategory.replace('-', ' ') : 'All Kaarigars'}
           </h2>
           <p className="text-[10px] text-slate-500">Verified skilled workers in {selectedCity}</p>
         </div>
-
-        <div className="flex items-center space-x-2">
-          <button
-            type="button"
-            onClick={() => setFilterAvailability(filterAvailability === 'all' ? 'available_now' : 'all')}
-            className={`px-2.5 py-1 rounded-xl text-[10px] font-black border transition-all cursor-pointer ${
-              filterAvailability === 'available_now'
-                ? 'bg-emerald-600 text-white border-emerald-500 shadow-xs'
-                : 'bg-white text-slate-700 border-slate-200'
-            }`}
-          >
-            🟢 Available Now
-          </button>
-
-          <button
-            type="button"
-            onClick={onBack}
-            className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-800 px-3 py-1.5 rounded-xl font-bold active:scale-95 transition cursor-pointer"
-          >
-            ← Trades
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={onBack}
+          className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-800 px-3 py-1.5 rounded-xl font-bold active:scale-95 transition cursor-pointer"
+        >
+          ← Categories
+        </button>
       </div>
 
-      {/* 2. WORKERS LIST */}
       {filteredWorkers.length === 0 ? (
-        <div className="bg-white/80 backdrop-blur-md rounded-2xl p-8 text-center border border-slate-200">
+        <div className="bg-white/80 rounded-2xl p-8 text-center border border-slate-200">
           <span className="text-3xl">🛠️</span>
           <p className="text-slate-600 font-bold text-xs mt-2">
-            Is trade me abhi koi kaarigar uplabdh nahi hai.
+            No {selectedSubCategory !== 'all' ? selectedSubCategory : 'workers'} found in {selectedCity}.
           </p>
-          <button
-            type="button"
-            onClick={onBack}
-            className="mt-3 text-xs bg-slate-900 text-white px-3.5 py-2 rounded-xl font-bold cursor-pointer"
-          >
-            Explore Other Trades
-          </button>
         </div>
       ) : (
-        filteredWorkers.map((worker) => (
+        filteredWorkers.map((w) => (
           <article
-            key={worker.id}
-            className="bg-white rounded-2xl overflow-hidden shadow-sm border border-slate-200 hover:shadow-md transition duration-200 space-y-3 p-3.5 relative"
+            key={w.id}
+            className="bg-white rounded-2xl overflow-hidden shadow-sm border border-slate-200 hover:shadow-md transition p-3.5 space-y-3 relative"
           >
-            {/* 📷 FULL HERO IMAGE WITH REELS-STYLE RIGHT OVERLAYS */}
             <div className="relative h-48 w-full bg-slate-100 rounded-2xl overflow-hidden shadow-inner">
               <img
-                src={worker.image || 'https://images.unsplash.com/photo-1581578731548-c64695cc6952?w=700'}
-                alt={worker.name}
+                src={
+                  w.image ||
+                  w.photo ||
+                  w.avatar ||
+                  'https://images.unsplash.com/photo-1621905251189-08b45d6a269e?w=700'
+                }
+                alt={w.name}
+                loading="lazy"
                 className="w-full h-full object-cover"
+                onError={(e) => {
+                  e.target.src = 'https://images.unsplash.com/photo-1621905251189-08b45d6a269e?w=700';
+                }}
               />
-              <div className="absolute inset-0 bg-gradient-to-t from-slate-950/65 via-transparent to-transparent pointer-events-none"></div>
+              <span className="absolute bottom-2.5 left-2.5 text-xs font-black px-2.5 py-1 rounded-xl text-white bg-slate-950/85 backdrop-blur-md border border-white/10">
+                {w.visitingCharge || w.fee || w.price || 'Visiting: ₹ 200'}
+              </span>
 
-              {/* Badges & Visiting Charge */}
-              <div className="absolute bottom-2.5 left-2.5 z-10 space-y-1">
-                <span className="inline-block text-xs font-black px-2.5 py-1 rounded-xl text-white bg-slate-950/85 backdrop-blur-md shadow-md border border-white/10">
-                  Visiting: {worker.visitingCharge || worker.fee || '₹ 200 - 300'}
-                </span>
-                <span className="block text-[9px] font-black px-2 py-0.5 rounded-lg text-slate-950 bg-amber-400 shadow-sm w-max">
-                  {worker.experience || '8+ Yrs Experience'}
-                </span>
-              </div>
-
-              {/* 🌟 FLOATING RIGHT RAIL (🔥 Interested + 💬 Q&A) */}
               <ListingDiscussionThread
-                listingId={worker.id}
-                listingTitle={`${worker.name} (${worker.trade || 'Kaarigar'})`}
-                sellerName={worker.name}
-                sellerPhone={worker.phone || worker.whatsapp}
-                interestCount={worker.interestCount || 6}
+                listingId={w.id}
+                listingTitle={w.name || w.title}
+                sellerName={w.name}
+                sellerPhone={w.phone || w.whatsapp}
+                interestCount={w.interestCount || 0}
                 onNewNotification={onNewNotification}
               />
             </div>
 
-            {/* DETAILS */}
             <div className="pt-0.5">
               <div className="flex items-start justify-between">
-                <div>
-                  <h3 className="font-black text-slate-900 text-sm leading-snug">
-                    {worker.name}
-                  </h3>
-                  <p className="text-xs font-bold text-indigo-700 mt-0.5">
-                    🛠️ {worker.trade}
-                  </p>
-                </div>
-
-                <div className="flex items-center space-x-1 bg-amber-400 text-slate-950 px-2 py-0.5 rounded-lg font-black text-xs shrink-0 ml-2">
-                  <span>★</span>
-                  <span>{typeof worker.rating === 'number' ? worker.rating.toFixed(1) : (worker.rating || '4.9')}</span>
-                </div>
+                <h3 className="font-black text-slate-900 text-sm">{w.name || w.title}</h3>
+                <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md shrink-0 ml-2">
+                  {w.subCategory ? w.subCategory.toUpperCase() : 'KAARIGAR'}
+                </span>
               </div>
 
-              {/* SKILLS CHIPS */}
-              {worker.skills && worker.skills.length > 0 && (
-                <div className="flex flex-wrap gap-1 mt-2">
-                  {worker.skills.map((skill, sIdx) => (
-                    <span
-                      key={sIdx}
-                      className="text-[9px] font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md"
-                    >
-                      {skill}
-                    </span>
-                  ))}
-                </div>
+              {w.description && (
+                <p className="text-[11px] text-slate-600 mt-1 line-clamp-2">{w.description}</p>
               )}
 
-              <div className="flex items-center justify-between text-[10px] text-slate-500 font-semibold mt-2.5 pt-2 border-t border-slate-100">
-                <span>📍 {worker.location || selectedCity}</span>
-                <span className="text-emerald-700 font-bold">
-                  {worker.freeTimeSlot || 'Available Today (उपलब्ध)'}
-                </span>
+              <div className="flex items-center justify-between text-[10px] text-slate-500 font-semibold mt-2 pt-2 border-t border-slate-100">
+                <span>📍 {w.location || selectedCity}</span>
+                <span className="text-emerald-700 font-bold">{w.experience || '5+ Yrs Exp'}</span>
               </div>
             </div>
 
-            {/* ACTION BUTTONS */}
             <ActionButtons
-              phone={worker.phone || '9876543210'}
-              whatsapp={worker.whatsapp || worker.phone || '919876543210'}
-              message={`Namaste ${worker.name}, I need your ${worker.trade} service in ${selectedCity}. Are you available?`}
+              phone={w.phone || '9876543210'}
+              whatsapp={w.whatsapp || w.phone || '919876543210'}
+              message={`Namaste ${w.name}, I saw your profile on TownHub and need your service.`}
             />
           </article>
         ))

@@ -13,46 +13,98 @@ import { initialListings } from '../data/mockData';
 import { initialCommunityDrives } from '../data/communityData';
 import { initialReCommerceListings } from '../data/reCommerceData';
 import { supabase } from '../services/supabaseClient';
+import { getCategoryFallback } from '../services/listingService';
+import { getCategoryById, sanitizeSubCategoryId } from '../data/taxonomyRegistry';
 
 export function normalizeDBListing(item) {
+  const catId = (item.category || 'kaarigar').toLowerCase().trim();
+  const categoryConfig = getCategoryById(catId);
+  const rawSub = item.sub_category || item.subCategory || item.trade || item.vehicleType || item.profession || item.cuisine || '';
+  
+  // Exact deterministic subcategory assignment
+  const subCatId = sanitizeSubCategoryId(catId, rawSub);
+  const categoryFallback = getCategoryFallback(catId);
+
   const coverImage =
     item.image_url ||
     (item.image_urls && item.image_urls.length > 0 ? item.image_urls[0] : null) ||
-    'https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=700';
+    item.image ||
+    item.photo ||
+    item.avatar ||
+    item.banner ||
+    item.logo ||
+    categoryFallback;
 
   const allImages =
     item.image_urls && item.image_urls.length > 0
       ? item.image_urls
-      : [coverImage];
+      : (item.images && item.images.length > 0 ? item.images : [coverImage]);
+
+  const priceVal =
+    item.price ||
+    item.rates ||
+    item.fee ||
+    item.visitingCharge ||
+    item.consultationFee ||
+    item.priceForTwo ||
+    'Contact for Price';
+
+  const nameVal = item.title || item.name || 'Untitled Listing';
+  const rawLocation = item.location_name || item.location || 'Alwar';
+  const personOrBiz = item.seller_name || item.sellerName || item.driverName || item.providerName || item.name || 'Verified Member';
+  const cityName = rawLocation.toLowerCase().includes('jaipur') ? 'Jaipur' : 'Alwar';
 
   return {
     id: item.id,
-    title: item.title || item.name || 'Untitled Listing',
-    name: item.title || item.name || 'Untitled Listing',
-    category: item.category || 'general',
-    subCategory: item.sub_category || item.subCategory || 'all',
-    price: item.price || 'Contact for Price',
-    fee: item.price || 'Contact for Price',
-    rates: item.price || 'Contact for Price',
-    visitingCharge: item.price || 'Contact for Price',
-    description: item.description || '',
-    sellerName: item.seller_name || item.sellerName || 'Verified Member',
+    title: nameVal,
+    name: nameVal,
+    category: catId,
+    subCategory: subCatId,
+    bucketKey: categoryConfig.bucketKey,
+    
+    // Strict schema aliases matching exact subCatId
+    trade: subCatId,
+    profession: subCatId,
+    vehicleType: subCatId,
+    cuisine: subCatId,
+    tuitionType: subCatId,
+    shopType: subCatId,
+    workType: subCatId,
+    vendorType: subCatId,
+    itemType: subCatId,
+
+    price: priceVal,
+    fee: priceVal,
+    rates: priceVal,
+    visitingCharge: priceVal,
+    consultationFee: priceVal,
+    priceForTwo: priceVal,
+
+    sellerName: personOrBiz,
+    driverName: personOrBiz,
+    providerName: personOrBiz,
+    doctorName: personOrBiz,
+
     phone: item.phone || '9876543210',
     whatsapp: item.whatsapp || item.phone || '9876543210',
-    location: item.location_name || item.location || 'Alwar',
-    landmark: item.landmark || item.location_name || 'Main Road',
+    city: cityName,
+    location: rawLocation,
+    landmark: item.landmark || rawLocation || 'Main Road',
     distance: item.distance || '0.1 km away',
+
     image: coverImage,
     images: allImages,
+    photo: coverImage,
+    avatar: coverImage,
+    banner: coverImage,
+
+    description: item.description || '',
     condition: item.condition || 'Good',
     interestCount: item.interest_count || item.interestCount || 0,
     rating: item.rating || 5.0,
     verified: item.verified !== undefined ? item.verified : true,
-    badge: '🟢 Verified Listing',
-    specialties: item.specialties || ['General Service'],
-    subjects: item.subjects || ['All Topics'],
-    experience: item.experience || 'Experienced',
-    freeTimeSlot: 'Available Today',
+    badge: item.badge || '🟢 Verified Listing',
+    experience: item.experience || '5+ Years Exp',
     isAvailableNow: true,
   };
 }
@@ -114,7 +166,7 @@ class HyperlocalEngineStore {
 
   addNotification(notif) {
     const newEntry = {
-      id: Date.now(),
+      id: notif.id || Date.now(),
       tag: notif.tag || 'ALERT',
       title: notif.title || 'Notification',
       message: notif.message || '',
@@ -125,7 +177,6 @@ class HyperlocalEngineStore {
     this.notify('notifications');
   }
 
-  // O(1) Discussion Thread Operations
   getThreadComments(listingId, fallbackComments = []) {
     return this.state.threads[listingId] || fallbackComments;
   }
@@ -144,15 +195,6 @@ class HyperlocalEngineStore {
     this.notify(`thread:${listingId}`);
   }
 
-  toggleCommentVisibility(listingId, commentId) {
-    const existing = this.state.threads[listingId] || [];
-    this.state.threads[listingId] = existing.map((c) =>
-      c.id === commentId ? { ...c, isPublic: !c.isPublic } : c
-    );
-    this.notify(`thread:${listingId}`);
-  }
-
-  // O(1) Fast Interest Counter Operations
   getInterestCount(listingId, defaultCount = 0) {
     return this.state.interests[listingId] !== undefined
       ? this.state.interests[listingId]
@@ -178,9 +220,6 @@ class HyperlocalEngineStore {
 
 export const hyperlocalStore = new HyperlocalEngineStore();
 
-/**
- * Hydrates store slices with active listings from Supabase
- */
 export async function hydrateFromDB() {
   try {
     const { data, error } = await supabase
@@ -196,7 +235,8 @@ export async function hydrateFromDB() {
 
     if (data && data.length > 0) {
       data.forEach((row) => {
-        const bucket = row.bucket_key || 'listings';
+        const catConfig = getCategoryById(row.category);
+        const bucket = row.bucket_key || catConfig.bucketKey || 'listings';
         const normalized = normalizeDBListing(row);
         hyperlocalStore.insertListing(bucket, normalized);
       });
@@ -207,7 +247,6 @@ export async function hydrateFromDB() {
   }
 }
 
-// Slice hook for category listings
 export function useStoreSlice(bucketKey) {
   const [data, setData] = useState(() => hyperlocalStore.getState(bucketKey));
 
@@ -222,7 +261,6 @@ export function useStoreSlice(bucketKey) {
   return data;
 }
 
-// Slice hook for isolated discussion threads
 export function useThreadSlice(listingId, defaultComments = []) {
   const [comments, setComments] = useState(() =>
     hyperlocalStore.getThreadComments(listingId, defaultComments)
@@ -239,7 +277,6 @@ export function useThreadSlice(listingId, defaultComments = []) {
   return comments;
 }
 
-// Slice hook for isolated interest counter
 export function useInterestSlice(listingId, defaultCount = 0) {
   const [count, setCount] = useState(() =>
     hyperlocalStore.getInterestCount(listingId, defaultCount)
@@ -256,7 +293,6 @@ export function useInterestSlice(listingId, defaultCount = 0) {
   return count;
 }
 
-// Slice hook for user notifications
 export function useNotificationSlice() {
   const [notifs, setNotifs] = useState(() => hyperlocalStore.getState('notifications'));
 
@@ -271,7 +307,6 @@ export function useNotificationSlice() {
   return notifs;
 }
 
-// Real-time WebSocket singleton
 let realtimeChannel = null;
 
 export function initRealtimeSubscriptions() {
@@ -285,7 +320,8 @@ export function initRealtimeSubscriptions() {
       (payload) => {
         const item = payload.new;
         const normalized = normalizeDBListing(item);
-        hyperlocalStore.insertListing(item.bucket_key || 'listings', normalized);
+        const catConfig = getCategoryById(item.category);
+        hyperlocalStore.insertListing(item.bucket_key || catConfig.bucketKey || 'listings', normalized);
 
         hyperlocalStore.addNotification({
           tag: 'NEW LISTING',
