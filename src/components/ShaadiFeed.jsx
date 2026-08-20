@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { useStoreSlice } from '../store/hyperlocalStore';
+import { getCategoryById } from '../data/taxonomyRegistry';
 import ActionButtons from './common/ActionButtons';
 import ListingDiscussionThread from './common/ListingDiscussionThread';
 
@@ -16,6 +17,7 @@ export default function ShaadiFeed({
   const allVendors = propVendors && propVendors.length > 0 ? propVendors : storeVendors;
 
   const targetSub = (selectedSubCategory || selectedCategory || 'all').toLowerCase().trim();
+  const categoryConfig = getCategoryById('shaadi');
 
   const filteredVendors = useMemo(() => {
     const q = (searchQuery || '').toLowerCase().trim();
@@ -27,12 +29,12 @@ export default function ShaadiFeed({
       const matchesCity = !city || loc.includes(city) || city.includes(loc) || !loc;
       if (!matchesCity) return false;
 
-      // 2. Strict Subcategory / Vendor Type Filter
+      // 2. Strict Subcategory Filter
       const itemSub = (item.subCategory || item.vendorType || item.sub_category || '').toLowerCase().trim();
       const matchesSub = targetSub === 'all' || itemSub === targetSub;
       if (!matchesSub) return false;
 
-      // 3. Search Query Filter
+      // 3. Search Filter
       if (!q) return true;
       return (
         item.name?.toLowerCase().includes(q) ||
@@ -44,14 +46,10 @@ export default function ShaadiFeed({
     });
   }, [allVendors, targetSub, selectedCity, searchQuery]);
 
-  const getShaadiTitle = () => {
-    switch (targetSub) {
-      case 'marriage-gardens': return 'Marriage Gardens & Banquets (मैरिज गार्डन)';
-      case 'halwai-caterers': return 'Halwai & Catering (हलवाई व कैटरिंग)';
-      case 'tent-light': return 'Tent & DJ Sound (टेंट व डीजे साउंड)';
-      case 'photographers': return 'Wedding Photography (वेडिंग फोटोग्राफी)';
-      default: return 'All Wedding Services';
-    }
+  const getSubCategoryTitle = () => {
+    if (targetSub === 'all') return 'All Shaadi & Wedding Services';
+    const matched = categoryConfig.subCategories.find((s) => s.id === targetSub);
+    return matched ? matched.name : targetSub.replace('-', ' ').toUpperCase();
   };
 
   return (
@@ -60,9 +58,9 @@ export default function ShaadiFeed({
       <div className="bg-white/85 backdrop-blur-md p-3.5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
         <div>
           <h2 className="text-sm font-black text-slate-900 capitalize">
-            {getShaadiTitle()}
+            {getSubCategoryTitle()}
           </h2>
-          <p className="text-[10px] text-slate-500">Verified wedding vendors in {selectedCity}</p>
+          <p className="text-[10px] text-slate-500">Live verified wedding specialists & workers in {selectedCity}</p>
         </div>
         <button
           type="button"
@@ -73,12 +71,12 @@ export default function ShaadiFeed({
         </button>
       </div>
 
-      {/* Vendor Cards List */}
+      {/* Cards List */}
       {filteredVendors.length === 0 ? (
         <div className="bg-white/80 rounded-2xl p-8 text-center border border-slate-200">
           <span className="text-3xl">💍</span>
           <p className="text-slate-600 font-bold text-xs mt-2">
-            No wedding vendors found under {targetSub !== 'all' ? targetSub : 'this category'} in {selectedCity}.
+            No listings found under {targetSub !== 'all' ? targetSub : 'this category'} in {selectedCity}.
           </p>
         </div>
       ) : (
@@ -102,13 +100,13 @@ export default function ShaadiFeed({
                 }}
               />
               <span className="absolute bottom-2.5 left-2.5 text-xs font-black px-2.5 py-1 rounded-xl text-white bg-slate-950/85 backdrop-blur-md border border-white/10">
-                {v.startingPackage || v.price || 'Package on Request'}
+                {v.startingPackage || v.price || 'Quotation on Request'}
               </span>
 
               <ListingDiscussionThread
                 listingId={v.id}
                 listingTitle={v.name || v.title}
-                sellerName={v.sellerName || v.name || 'Vendor'}
+                sellerName={v.sellerName || v.name || 'Wedding Specialist'}
                 sellerPhone={v.phone || v.whatsapp}
                 interestCount={v.interestCount || 0}
                 onNewNotification={onNewNotification}
@@ -119,7 +117,7 @@ export default function ShaadiFeed({
               <div className="flex items-start justify-between">
                 <h3 className="font-black text-slate-900 text-sm">{v.name || v.title}</h3>
                 <span className="text-[10px] font-bold text-rose-800 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-md shrink-0 ml-2">
-                  {(v.subCategory || v.vendorType || 'VENDOR').toUpperCase()}
+                  {(v.subCategory || 'SHAADI').toUpperCase()}
                 </span>
               </div>
 
@@ -129,14 +127,14 @@ export default function ShaadiFeed({
 
               <div className="flex items-center justify-between text-[10px] text-slate-500 font-semibold mt-2 pt-2 border-t border-slate-100">
                 <span>📍 {v.location || selectedCity}</span>
-                <span className="text-emerald-700 font-bold">{v.distance || '0.1 km away'}</span>
+                <span className="text-emerald-700 font-bold">{v.badge || '🟢 Verified'}</span>
               </div>
             </div>
 
             <ActionButtons
               phone={v.phone || '9876543210'}
               whatsapp={v.whatsapp || v.phone || '919876543210'}
-              message={`Namaste, I want to inquire regarding wedding bookings/dates for "${v.name || v.title}".`}
+              message={`Namaste, I want to book / inquire regarding "${v.name || v.title}" seen on TownHub Shaadi.`}
             />
           </article>
         ))
