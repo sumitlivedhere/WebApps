@@ -10,6 +10,8 @@ import ContextualListingModal from './components/ContextualListingModal';
 const SurpriseFeed = lazy(() => import('./components/SurpriseFeed'));
 const ProviderDashboard = lazy(() => import('./ProviderDashboard'));
 const TownHubView = lazy(() => import('./categories/TownHubView'));
+const MedicalHub = lazy(() => import('./categories/MedicalHub'));
+const MedicalFeed = lazy(() => import('./components/MedicalFeed'));
 const PropertyHub = lazy(() => import('./categories/PropertyHub'));
 const VehicleHub = lazy(() => import('./categories/VehicleHub'));
 const ElectronicsHub = lazy(() => import('./categories/ElectronicsHub'));
@@ -27,8 +29,11 @@ const AdvertisingHub = lazy(() => import('./categories/AdvertisingHub'));
 const CommunityHub = lazy(() => import('./categories/CommunityHub'));
 const MarketHub = lazy(() => import('./categories/MarketHub'));
 const ReCommerceHub = lazy(() => import('./categories/ReCommerceHub'));
+const FitnessHub = lazy(() => import('./categories/FitnessHub'));
+const CreatorsHub = lazy(() => import('./categories/CreatorsHub'));
 
 const ListingsFeed = lazy(() => import('./components/ListingsFeed'));
+const PropertyFeed = lazy(() => import('./components/PropertyFeed'));
 const KaarigarWorkerList = lazy(() => import('./components/KaarigarWorkerList'));
 const TransporterFeed = lazy(() => import('./components/TransporterFeed'));
 const WhiteCollarFeed = lazy(() => import('./components/WhiteCollarFeed'));
@@ -41,6 +46,8 @@ const AdvertisingFeed = lazy(() => import('./components/AdvertisingFeed'));
 const CommunityFeed = lazy(() => import('./components/CommunityFeed'));
 const MarketFeed = lazy(() => import('./components/MarketFeed'));
 const ReCommerceFeed = lazy(() => import('./components/recommerce/ReCommerceFeed'));
+const FitnessFeed = lazy(() => import('./components/FitnessFeed'));
+const CreatorsFeed = lazy(() => import('./components/CreatorsFeed'));
 
 function ScreenSkeleton() {
   return (
@@ -132,7 +139,7 @@ export default function App() {
   const handleTouchEnd = (e) => {
     if (isListingModalOpen || isNotificationsOpen) return;
 
-    // Ignore swipe if initiated inside horizontally scrollable elements (chips/carousels) or text fields
+    // Ignore swipe if inside horizontal scrollers or inputs
     const target = e.target;
     if (target.closest('.overflow-x-auto, input, textarea, select')) return;
 
@@ -145,10 +152,8 @@ export default function App() {
     // Minimum distance: 60px, Horizontal dominant (X > 1.4 * Y), Duration: < 550ms
     if (deltaTime < 550 && Math.abs(deltaX) > 60 && Math.abs(deltaX) > Math.abs(deltaY) * 1.4) {
       if (deltaX > 0) {
-        // 👉 Swiped Right -> Step Back
         if (canGoBack) goBack();
       } else {
-        // 👈 Swiped Left -> Step Forward
         if (canGoForward) goForward();
       }
     }
@@ -171,6 +176,7 @@ export default function App() {
       fashion: 'fashion-hub',
       furniture: 'furniture-hub',
       kaarigar: 'kaarigar-hub',
+      medical: 'medical-hub',
       transporters: 'transporter-hub',
       'white-collar': 'white-collar-hub',
       education: 'education-hub',
@@ -182,7 +188,10 @@ export default function App() {
       community: 'community-hub',
       market: 'market-hub',
       recommerce: 'buysell-hub',
+      fitness: 'fitness-hub',
+      creators: 'creators-hub',
     };
+
     navigateTo({
       screen: hubMap[catId] || 'town-hub',
       category: catId,
@@ -192,12 +201,13 @@ export default function App() {
 
   const handleOpenFeed = (catId, subId) => {
     const feedMap = {
-      property: 'listings',
+      property: 'property-feed',
       vehicles: 'listings',
       electronics: 'listings',
       fashion: 'listings',
       furniture: 'listings',
       kaarigar: 'kaarigar-feed',
+      medical: 'medical-feed',
       transporters: 'transporter-feed',
       'white-collar': 'white-collar-feed',
       education: 'education-feed',
@@ -209,7 +219,10 @@ export default function App() {
       community: 'community-feed',
       market: 'market-feed',
       recommerce: 'recommerce-feed',
+      fitness: 'fitness-feed',
+      creators: 'creators-feed',
     };
+
     navigateTo({
       screen: feedMap[catId] || 'listings',
       category: catId,
@@ -275,7 +288,6 @@ export default function App() {
 
         {/* Right Action Cluster */}
         <div className="flex items-center space-x-1.5 shrink-0">
-          {/* Contextual "+ Post Here" Button (Hidden on Home & Provider Dashboard) */}
           {currentScreen !== 'home' && currentScreen !== 'provider-dashboard' && (
             <button
               type="button"
@@ -338,6 +350,23 @@ export default function App() {
           {currentScreen === 'provider-dashboard' && (
             <ProviderDashboard onBack={goBack} />
           )}
+
+          {currentScreen === 'medical-hub' && (
+          <MedicalHub
+             selectedCity={selectedCity}
+             onSelectSubCategory={(sub) => handleOpenFeed('medical', sub)}
+             onBack={goBack}
+         />
+           )}
+
+          {currentScreen === 'medical-feed' && (
+           <MedicalFeed
+             selectedSubCategory={selectedSubCategory}
+             selectedCity={selectedCity}
+             searchQuery={searchQuery}
+             onBack={goBack}
+        />
+           )}
 
           {currentScreen === 'town-hub' && (
             <TownHubView
@@ -466,11 +495,33 @@ export default function App() {
               onBack={goBack}
             />
           )}
+          {currentScreen === 'fitness-hub' && (
+            <FitnessHub
+              selectedCity={selectedCity}
+              onSelectSubCategory={(sub) => handleOpenFeed('fitness', sub)}
+              onBack={goBack}
+            />
+          )}
+          {currentScreen === 'creators-hub' && (
+            <CreatorsHub
+              selectedCity={selectedCity}
+              onSelectSubCategory={(sub) => handleOpenFeed('creators', sub)}
+              onBack={goBack}
+            />
+          )}
 
           {/* Feeds */}
           {currentScreen === 'listings' && (
             <ListingsFeed
               selectedCategory={selectedCategory}
+              selectedSubCategory={selectedSubCategory}
+              selectedCity={selectedCity}
+              searchQuery={searchQuery}
+              onBack={goBack}
+            />
+          )}
+          {currentScreen === 'property-feed' && (
+            <PropertyFeed
               selectedSubCategory={selectedSubCategory}
               selectedCity={selectedCity}
               searchQuery={searchQuery}
@@ -567,6 +618,22 @@ export default function App() {
           )}
           {currentScreen === 'recommerce-feed' && (
             <ReCommerceFeed
+              selectedSubCategory={selectedSubCategory}
+              selectedCity={selectedCity}
+              searchQuery={searchQuery}
+              onBack={goBack}
+            />
+          )}
+          {currentScreen === 'fitness-feed' && (
+            <FitnessFeed
+              selectedSubCategory={selectedSubCategory}
+              selectedCity={selectedCity}
+              searchQuery={searchQuery}
+              onBack={goBack}
+            />
+          )}
+          {currentScreen === 'creators-feed' && (
+            <CreatorsFeed
               selectedSubCategory={selectedSubCategory}
               selectedCity={selectedCity}
               searchQuery={searchQuery}

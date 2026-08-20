@@ -1,47 +1,63 @@
 import React, { useMemo } from 'react';
+import { useStoreSlice } from '../store/hyperlocalStore';
+import { getCategoryById } from '../data/taxonomyRegistry';
 import ActionButtons from './common/ActionButtons';
 import ListingDiscussionThread from './common/ListingDiscussionThread';
 
 export default function CommunityFeed({
-  drives = [],
-  selectedSubCategory = 'all',
+  selectedSubCategory,
+  selectedCategory,
   selectedCity = 'Alwar',
   searchQuery = '',
   onBack,
   onNewNotification,
 }) {
-  const filteredDrives = useMemo(() => {
+  const storeListings = useStoreSlice('communityDrives');
+  const targetSub = (selectedSubCategory || selectedCategory || 'all').toLowerCase().trim();
+  const categoryConfig = getCategoryById('community');
+
+  const filteredListings = useMemo(() => {
     const q = (searchQuery || '').toLowerCase().trim();
     const city = (selectedCity || '').toLowerCase().trim();
-    const targetSub = (selectedSubCategory || 'all').toLowerCase().trim();
 
-    return (drives || []).filter((item) => {
+    return (storeListings || []).filter((item) => {
+      // 1. City Filter
       const loc = (item.location || item.city || '').toLowerCase();
       const matchesCity = !city || loc.includes(city) || city.includes(loc) || !loc;
       if (!matchesCity) return false;
 
-      const itemSub = (item.subCategory || item.driveType || item.sub_category || '').toLowerCase().trim();
+      // 2. Subcategory Filter
+      const itemSub = (item.subCategory || item.category || '').toLowerCase().trim();
       const matchesSub = targetSub === 'all' || itemSub === targetSub;
       if (!matchesSub) return false;
 
+      // 3. Search Filter
       if (!q) return true;
       return (
         item.name?.toLowerCase().includes(q) ||
         item.title?.toLowerCase().includes(q) ||
+        item.organizerName?.toLowerCase().includes(q) ||
         item.description?.toLowerCase().includes(q) ||
         item.location?.toLowerCase().includes(q)
       );
     });
-  }, [drives, selectedSubCategory, selectedCity, searchQuery]);
+  }, [storeListings, targetSub, selectedCity, searchQuery]);
+
+  const getSubCategoryTitle = () => {
+    if (targetSub === 'all') return 'All Social Welfare & Community Seva';
+    const matched = categoryConfig.subCategories.find((s) => s.id === targetSub);
+    return matched ? matched.name : targetSub.replace('-', ' ').toUpperCase();
+  };
 
   return (
-    <main className="p-3.5 space-y-3.5 relative z-10 animate-fade-in text-slate-800">
+    <main className="p-3.5 space-y-3.5 relative z-10 animate-fade-in text-slate-800 pb-16">
+      {/* Header */}
       <div className="bg-white/85 backdrop-blur-md p-3.5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
         <div>
           <h2 className="text-sm font-black text-slate-900 capitalize">
-            {selectedSubCategory !== 'all' ? selectedSubCategory.replace('-', ' ') : 'Community & Seva Drives'}
+            {getSubCategoryTitle()}
           </h2>
-          <p className="text-[10px] text-slate-500">Blood Donation, Ration & Gau Seva in {selectedCity}</p>
+          <p className="text-[10px] text-slate-500">Live verified non-profit initiatives & trusts in {selectedCity}</p>
         </div>
         <button
           type="button"
@@ -52,69 +68,74 @@ export default function CommunityFeed({
         </button>
       </div>
 
-      {filteredDrives.length === 0 ? (
+      {/* Cards List */}
+      {filteredListings.length === 0 ? (
         <div className="bg-white/80 rounded-2xl p-8 text-center border border-slate-200">
           <span className="text-3xl">🤝</span>
           <p className="text-slate-600 font-bold text-xs mt-2">
-            No community drives found in this category for {selectedCity}.
+            No community drives found under {targetSub !== 'all' ? targetSub : 'this category'} in {selectedCity}.
           </p>
         </div>
       ) : (
-        filteredDrives.map((d) => (
+        filteredListings.map((item) => (
           <article
-            key={d.id}
+            key={item.id}
             className="bg-white rounded-2xl overflow-hidden shadow-sm border border-slate-200 hover:shadow-md transition p-3.5 space-y-3 relative"
           >
-            <div className="relative h-48 w-full bg-slate-100 rounded-2xl overflow-hidden shadow-inner">
+            <div className="relative h-44 w-full bg-slate-100 rounded-2xl overflow-hidden shadow-inner">
               <img
                 src={
-                  d.image ||
-                  d.photo ||
-                  'https://images.unsplash.com/photo-1532629345422-7515f3d16bb6?w=700'
+                  item.image ||
+                  'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?w=700'
                 }
-                alt={d.name || d.title}
+                alt={item.name || item.title}
                 loading="lazy"
                 className="w-full h-full object-cover"
                 onError={(e) => {
-                  e.target.src = 'https://images.unsplash.com/photo-1532629345422-7515f3d16bb6?w=700';
+                  e.target.src = 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?w=700';
                 }}
               />
-              <span className="absolute bottom-2.5 left-2.5 text-xs font-black px-2.5 py-1 rounded-xl text-white bg-slate-950/85 backdrop-blur-md border border-white/10">
-                Free / Seva Drive
+              <span className="absolute bottom-2.5 left-2.5 text-xs font-black px-2.5 py-1 rounded-xl text-white bg-rose-950/85 backdrop-blur-md border border-rose-400/20">
+                {item.price || 'Free Seva'}
               </span>
 
               <ListingDiscussionThread
-                listingId={d.id}
-                listingTitle={d.name || d.title}
-                sellerName={d.organizer || d.sellerName || 'Organizer'}
-                sellerPhone={d.phone || d.whatsapp}
-                interestCount={d.interestCount || 0}
+                listingId={item.id}
+                listingTitle={item.name || item.title}
+                sellerName={item.organizerName || item.name || 'Volunteer Coordinator'}
+                sellerPhone={item.phone || item.whatsapp}
+                interestCount={item.interestCount || 0}
                 onNewNotification={onNewNotification}
               />
             </div>
 
-            <div className="pt-0.5">
+            <div className="pt-0.5 space-y-1">
               <div className="flex items-start justify-between">
-                <h3 className="font-black text-slate-900 text-sm">{d.name || d.title}</h3>
-                <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md shrink-0 ml-2">
-                  {d.subCategory ? d.subCategory.toUpperCase() : 'SEVA'}
+                <div>
+                  <h3 className="font-black text-slate-900 text-sm">{item.name || item.title}</h3>
+                  {item.organizerName && (
+                    <p className="text-[10px] text-rose-700 font-bold mt-0.5">🚩 {item.organizerName}</p>
+                  )}
+                </div>
+                <span className="text-[10px] font-bold text-rose-800 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-md shrink-0 ml-2">
+                  {(item.subCategory || 'SEVA').toUpperCase()}
                 </span>
               </div>
 
-              {d.description && (
-                <p className="text-[11px] text-slate-600 mt-1 line-clamp-2">{d.description}</p>
+              {item.description && (
+                <p className="text-[11px] text-slate-600 line-clamp-2 leading-relaxed">{item.description}</p>
               )}
 
-              <div className="flex items-center justify-between text-[10px] text-slate-500 font-semibold mt-2 pt-2 border-t border-slate-100">
-                <span>📍 {d.location || selectedCity}</span>
-                <span className="text-emerald-700 font-bold">{d.distance || '0.1 km away'}</span>
+              <div className="flex items-center justify-between text-[10px] text-slate-500 font-semibold pt-2 border-t border-slate-100">
+                <span>📍 {item.location || selectedCity}</span>
+                <span className="text-emerald-700 font-bold">{item.badge || item.timing || '🟢 Active Initiative'}</span>
               </div>
             </div>
 
             <ActionButtons
-              phone={d.phone || '9876543210'}
-              whatsapp={d.whatsapp || d.phone || '919876543210'}
-              message={`Namaste, I want to participate / help in the "${d.name || d.title}" drive.`}
+              phone={item.phone || '9876543210'}
+              whatsapp={item.whatsapp || item.phone || '919876543210'}
+              message={`Namaste, I am reaching out regarding your community initiative "${item.name || item.title}" on TownHub Seva in ${selectedCity}. How can I contribute / seek help?`}
             />
           </article>
         ))

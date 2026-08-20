@@ -12,6 +12,11 @@ import { initialWhiteCollarListings } from '../data/whiteCollarData';
 import { initialListings } from '../data/mockData';
 import { initialCommunityDrives } from '../data/communityData';
 import { initialReCommerceListings } from '../data/reCommerceData';
+import { initialPropertyListings } from '../data/propertyData';
+import { initialFitnessListings } from '../data/fitnessData';
+import { initialMedicalListings } from '../data/medicalData';
+import { initialCreatorsListings } from '../data/creatorsData';
+
 import { supabase } from '../services/supabaseClient';
 import { getCategoryFallback } from '../services/listingService';
 import { getCategoryById, sanitizeSubCategoryId } from '../data/taxonomyRegistry';
@@ -19,7 +24,15 @@ import { getCategoryById, sanitizeSubCategoryId } from '../data/taxonomyRegistry
 export function normalizeDBListing(item) {
   const catId = (item.category || 'property').toLowerCase().trim();
   const categoryConfig = getCategoryById(catId);
-  const rawSub = item.sub_category || item.subCategory || item.propertyType || item.trade || item.vehicleType || item.profession || item.cuisine || '';
+  const rawSub =
+    item.sub_category ||
+    item.subCategory ||
+    item.propertyType ||
+    item.trade ||
+    item.vehicleType ||
+    item.profession ||
+    item.cuisine ||
+    '';
   const subCatId = sanitizeSubCategoryId(catId, rawSub);
   const categoryFallback = getCategoryFallback(catId);
 
@@ -31,10 +44,25 @@ export function normalizeDBListing(item) {
     item.avatar ||
     categoryFallback;
 
-  const priceVal = item.price || item.rates || item.fee || item.visitingCharge || item.consultationFee || item.priceForTwo || 'Contact for Price';
+  const priceVal =
+    item.price ||
+    item.rates ||
+    item.fee ||
+    item.rent ||
+    item.visitingCharge ||
+    item.consultationFee ||
+    item.priceForTwo ||
+    'Contact for Price';
   const nameVal = item.title || item.name || 'Untitled Listing';
   const rawLocation = item.location_name || item.location || 'Alwar';
-  const personOrBiz = item.seller_name || item.sellerName || item.driverName || item.providerName || item.name || 'Verified Member';
+  const personOrBiz =
+    item.seller_name ||
+    item.sellerName ||
+    item.driverName ||
+    item.trainerName ||
+    item.providerName ||
+    item.name ||
+    'Verified Member';
 
   return {
     id: item.id,
@@ -42,7 +70,7 @@ export function normalizeDBListing(item) {
     name: nameVal,
     category: catId,
     subCategory: subCatId,
-    bucketKey: categoryConfig.bucketKey,
+    bucketKey: item.bucket_key || categoryConfig.bucketKey || 'listings',
     trade: subCatId,
     profession: subCatId,
     vehicleType: subCatId,
@@ -54,12 +82,14 @@ export function normalizeDBListing(item) {
     itemType: subCatId,
     price: priceVal,
     fee: priceVal,
+    rent: priceVal,
     rates: priceVal,
     visitingCharge: priceVal,
     consultationFee: priceVal,
     priceForTwo: priceVal,
     sellerName: personOrBiz,
     driverName: personOrBiz,
+    trainerName: personOrBiz,
     providerName: personOrBiz,
     doctorName: personOrBiz,
     phone: item.phone || '9876543210',
@@ -79,6 +109,10 @@ export function normalizeDBListing(item) {
     verified: item.verified !== undefined ? item.verified : true,
     badge: item.badge || '🟢 Verified Listing',
     experience: item.experience || '5+ Years Exp',
+    timing: item.timing || '',
+    qualifications: item.qualifications || '',
+    regNumber: item.regNumber || '',
+    capacity: item.capacity || '',
     isAvailableNow: true,
   };
 }
@@ -87,6 +121,10 @@ class HyperlocalEngineStore {
   constructor() {
     this.state = {
       listings: (initialListings || []).map((i) => normalizeDBListing(i)),
+      propertyListings: (initialPropertyListings || []).map((i) => normalizeDBListing({ ...i, category: 'property' })),
+      fitnessListings: (initialFitnessListings || []).map((i) => normalizeDBListing({ ...i, category: 'fitness' })),
+      medicalListings: (initialMedicalListings || []).map((i) => normalizeDBListing({ ...i, category: 'medical' })),
+      creatorsListings: (initialCreatorsListings || []).map((i) => normalizeDBListing({ ...i, category: 'creators' })),
       marketProducts: (initialMarketProducts || []).map((i) => normalizeDBListing({ ...i, category: 'market' })),
       kaarigarWorkers: (initialKaarigarWorkers || []).map((i) => normalizeDBListing({ ...i, category: 'kaarigar' })),
       transportFirms: (initialTransportFirms || []).map((i) => normalizeDBListing({ ...i, category: 'transporters' })),
@@ -100,6 +138,7 @@ class HyperlocalEngineStore {
       restaurantsList: (initialRestaurantsList || []).map((i) => normalizeDBListing({ ...i, category: 'restaurants' })),
       whiteCollarListings: (initialWhiteCollarListings || []).map((i) => normalizeDBListing({ ...i, category: 'white-collar' })),
       reCommerceListings: (initialReCommerceListings || []).map((i) => normalizeDBListing({ ...i, category: 'recommerce' })),
+
       threads: {},
       interests: {},
       notifications: [
@@ -134,6 +173,10 @@ class HyperlocalEngineStore {
     const buckets = [
       this.state.kaarigarWorkers,
       this.state.listings,
+      this.state.propertyListings,
+      this.state.medicalListings,
+      this.state.fitnessListings,
+      this.state.creatorsListings,
       this.state.individualTransporters,
       this.state.transportFirms,
       this.state.whiteCollarListings,
@@ -177,7 +220,6 @@ class HyperlocalEngineStore {
       this.state[targetBucket] = [item, ...list];
     }
 
-    // Trigger confirmation notification for the author
     this.addNotification({
       tag: 'LISTING LIVE',
       title: `"${item.title || item.name}" Published!`,
@@ -254,7 +296,6 @@ class HyperlocalEngineStore {
     this.state.threads[listingId] = [comment, ...(this.state.threads[listingId] || [])];
     this.notify(`thread:${listingId}`);
 
-    // Ping notification for comment
     this.addNotification({
       tag: 'NEW COMMENT',
       title: `Inquiry on "${listingTitle || 'Listing'}"`,
@@ -271,7 +312,6 @@ class HyperlocalEngineStore {
     );
     this.notify(`thread:${listingId}`);
 
-    // Ping notification for seller reply
     this.addNotification({
       tag: 'SELLER REPLIED',
       title: `Reply on "${listingTitle || 'Listing'}"`,
@@ -291,7 +331,6 @@ class HyperlocalEngineStore {
     this.state.interests[listingId] = count;
     this.notify(`interest:${listingId}`);
 
-    // Ping notification for interested item
     this.addNotification({
       tag: 'INTEREST REGISTERED',
       title: `You expressed interest in "${listingTitle || 'Listing'}"`,

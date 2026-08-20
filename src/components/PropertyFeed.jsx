@@ -4,9 +4,8 @@ import { getCategoryById } from '../data/taxonomyRegistry';
 import ActionButtons from './common/ActionButtons';
 import ListingDiscussionThread from './common/ListingDiscussionThread';
 
-export default function WhiteCollarFeed({
-  professionals: propProfessionals,
-  selectedProfession,
+export default function PropertyFeed({
+  listings: propListings,
   selectedSubCategory,
   selectedCategory,
   selectedCity = 'Alwar',
@@ -14,24 +13,24 @@ export default function WhiteCollarFeed({
   onBack,
   onNewNotification,
 }) {
-  const storeProfessionals = useStoreSlice('whiteCollarListings');
-  const allProfessionals = propProfessionals && propProfessionals.length > 0 ? propProfessionals : storeProfessionals;
+  const storeListings = useStoreSlice('propertyListings');
+  const allListings = propListings && propListings.length > 0 ? propListings : storeListings;
 
-  const targetSub = (selectedProfession || selectedSubCategory || selectedCategory || 'all').toLowerCase().trim();
-  const categoryConfig = getCategoryById('white-collar');
+  const targetSub = (selectedSubCategory || selectedCategory || 'all').toLowerCase().trim();
+  const categoryConfig = getCategoryById('property');
 
-  const filteredProfessionals = useMemo(() => {
+  const filteredListings = useMemo(() => {
     const q = (searchQuery || '').toLowerCase().trim();
     const city = (selectedCity || '').toLowerCase().trim();
 
-    return (allProfessionals || []).filter((item) => {
+    return (allListings || []).filter((item) => {
       // 1. City Filter
       const loc = (item.location || item.city || '').toLowerCase();
       const matchesCity = !city || loc.includes(city) || city.includes(loc) || !loc;
       if (!matchesCity) return false;
 
       // 2. Subcategory Filter
-      const itemSub = (item.subCategory || item.profession || item.category || '').toLowerCase().trim();
+      const itemSub = (item.subCategory || item.category || item.sub_category || '').toLowerCase().trim();
       const matchesSub = targetSub === 'all' || itemSub === targetSub;
       if (!matchesSub) return false;
 
@@ -40,16 +39,15 @@ export default function WhiteCollarFeed({
       return (
         item.name?.toLowerCase().includes(q) ||
         item.title?.toLowerCase().includes(q) ||
-        item.qualifications?.toLowerCase().includes(q) ||
+        item.sellerName?.toLowerCase().includes(q) ||
         item.description?.toLowerCase().includes(q) ||
-        item.location?.toLowerCase().includes(q) ||
-        item.regNumber?.toLowerCase().includes(q)
+        item.location?.toLowerCase().includes(q)
       );
     });
-  }, [allProfessionals, targetSub, selectedCity, searchQuery]);
+  }, [allListings, targetSub, selectedCity, searchQuery]);
 
   const getSubCategoryTitle = () => {
-    if (targetSub === 'all') return 'All Professional Practitioners & Consultants';
+    if (targetSub === 'all') return 'All Real Estate & Property Listings';
     const matched = categoryConfig.subCategories.find((s) => s.id === targetSub);
     return matched ? matched.name : targetSub.replace('-', ' ').toUpperCase();
   };
@@ -62,7 +60,7 @@ export default function WhiteCollarFeed({
           <h2 className="text-sm font-black text-slate-900 capitalize">
             {getSubCategoryTitle()}
           </h2>
-          <p className="text-[10px] text-slate-500">Live verified practitioners & consultants in {selectedCity}</p>
+          <p className="text-[10px] text-slate-500">Live verified properties & land in {selectedCity}</p>
         </div>
         <button
           type="button"
@@ -74,77 +72,69 @@ export default function WhiteCollarFeed({
       </div>
 
       {/* Cards List */}
-      {filteredProfessionals.length === 0 ? (
+      {filteredListings.length === 0 ? (
         <div className="bg-white/80 rounded-2xl p-8 text-center border border-slate-200">
-          <span className="text-3xl">👔</span>
+          <span className="text-3xl">🏢</span>
           <p className="text-slate-600 font-bold text-xs mt-2">
-            No practitioners found under {targetSub !== 'all' ? targetSub : 'this category'} in {selectedCity}.
+            No property listings found under {targetSub !== 'all' ? targetSub : 'this category'} in {selectedCity}.
           </p>
         </div>
       ) : (
-        filteredProfessionals.map((item) => (
+        filteredListings.map((item) => (
           <article
             key={item.id}
             className="bg-white rounded-2xl overflow-hidden shadow-sm border border-slate-200 hover:shadow-md transition p-3.5 space-y-3 relative"
           >
-            <div className="relative h-44 w-full bg-slate-100 rounded-2xl overflow-hidden shadow-inner">
+            <div className="relative h-48 w-full bg-slate-100 rounded-2xl overflow-hidden shadow-inner">
               <img
                 src={
                   item.image ||
                   item.photo ||
-                  'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=700'
+                  'https://images.unsplash.com/photo-1570129477492-45c003edd2be?w=700'
                 }
-                alt={item.name || item.title}
+                alt={item.title || item.name}
                 loading="lazy"
                 className="w-full h-full object-cover"
                 onError={(e) => {
-                  e.target.src = 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=700';
+                  e.target.src = 'https://images.unsplash.com/photo-1570129477492-45c003edd2be?w=700';
                 }}
               />
               <span className="absolute bottom-2.5 left-2.5 text-xs font-black px-2.5 py-1 rounded-xl text-white bg-slate-950/85 backdrop-blur-md border border-white/10">
-                {item.price || item.rates || 'Consultation on Appointment'}
+                {item.price || item.rent || 'Price on Request'}
               </span>
 
               <ListingDiscussionThread
                 listingId={item.id}
-                listingTitle={item.name || item.title}
-                sellerName={item.name || 'Practitioner'}
+                listingTitle={item.title || item.name}
+                sellerName={item.sellerName || item.name || 'Property Owner'}
                 sellerPhone={item.phone || item.whatsapp}
                 interestCount={item.interestCount || 0}
                 onNewNotification={onNewNotification}
               />
             </div>
 
-            <div className="pt-0.5 space-y-1">
+            <div className="pt-0.5">
               <div className="flex items-start justify-between">
-                <div>
-                  <h3 className="font-black text-slate-900 text-sm">{item.name || item.title}</h3>
-                  {item.qualifications && (
-                    <p className="text-[11px] text-indigo-700 font-bold">{item.qualifications}</p>
-                  )}
-                  {item.regNumber && (
-                    <p className="text-[9px] text-slate-400 font-semibold">{item.regNumber}</p>
-                  )}
-                </div>
-                <span className="text-[10px] font-bold text-indigo-800 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-md shrink-0 ml-2">
-                  {(item.subCategory || 'PROFESSIONAL').toUpperCase()}
+                <h3 className="font-black text-slate-900 text-sm">{item.title || item.name}</h3>
+                <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md shrink-0 ml-2">
+                  {(item.subCategory || 'PROPERTY').toUpperCase()}
                 </span>
               </div>
 
               {item.description && (
-                <p className="text-[11px] text-slate-600 line-clamp-2 leading-relaxed">{item.description}</p>
+                <p className="text-[11px] text-slate-600 mt-1 line-clamp-2">{item.description}</p>
               )}
 
-              <div className="flex items-center justify-between text-[10px] text-slate-500 font-semibold pt-2 border-t border-slate-100">
+              <div className="flex items-center justify-between text-[10px] text-slate-500 font-semibold mt-2 pt-2 border-t border-slate-100">
                 <span>📍 {item.location || selectedCity}</span>
-                <span className="text-emerald-700 font-bold">{item.badge || item.timing || '🟢 Available on Appointment'}</span>
+                <span className="text-emerald-700 font-bold">{item.badge || '🟢 Verified Listing'}</span>
               </div>
             </div>
 
             <ActionButtons
               phone={item.phone || '9876543210'}
               whatsapp={item.whatsapp || item.phone || '919876543210'}
-              message={`Namaste ${item.name || ''}, I found your professional profile on TownHub. I would like to book a consultation / appointment in ${selectedCity}.`}
+              message={`Namaste ${item.sellerName || ''}, I saw your property listing "${item.title || item.name}" on TownHub Property. Is it available for inspection?`}
             />
           </article>
         ))

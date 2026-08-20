@@ -1,12 +1,13 @@
 import React, { useMemo } from 'react';
 import { useStoreSlice } from '../store/hyperlocalStore';
+import { getCategoryById } from '../data/taxonomyRegistry';
 import ActionButtons from './common/ActionButtons';
 import ListingDiscussionThread from './common/ListingDiscussionThread';
 
 export default function RestaurantsFeed({
   restaurants: propRestaurants,
   selectedSubCategory,
-  selectedCategoryId,
+  selectedCategory,
   selectedCity = 'Alwar',
   searchQuery = '',
   onBack,
@@ -15,7 +16,8 @@ export default function RestaurantsFeed({
   const storeRestaurants = useStoreSlice('restaurantsList');
   const allRestaurants = propRestaurants && propRestaurants.length > 0 ? propRestaurants : storeRestaurants;
 
-  const targetSub = (selectedSubCategory || selectedCategoryId || 'all').toLowerCase().trim();
+  const targetSub = (selectedSubCategory || selectedCategory || 'all').toLowerCase().trim();
+  const categoryConfig = getCategoryById('restaurants');
 
   const filteredRestaurants = useMemo(() => {
     const q = (searchQuery || '').toLowerCase().trim();
@@ -27,42 +29,37 @@ export default function RestaurantsFeed({
       const matchesCity = !city || loc.includes(city) || city.includes(loc) || !loc;
       if (!matchesCity) return false;
 
-      // 2. Strict Subcategory / Cuisine Filter
-      const itemSub = (item.subCategory || item.cuisine || item.sub_category || '').toLowerCase().trim();
+      // 2. Strict Subcategory Filter
+      const itemSub = (item.subCategory || item.category || item.sub_category || '').toLowerCase().trim();
       const matchesSub = targetSub === 'all' || itemSub === targetSub;
       if (!matchesSub) return false;
 
-      // 3. Search Query Filter
+      // 3. Search Filter
       if (!q) return true;
       return (
-        item.name?.toLowerCase().includes(q) ||
         item.title?.toLowerCase().includes(q) ||
+        item.name?.toLowerCase().includes(q) ||
         item.description?.toLowerCase().includes(q) ||
         item.location?.toLowerCase().includes(q)
       );
     });
   }, [allRestaurants, targetSub, selectedCity, searchQuery]);
 
-  const getCuisineTitle = () => {
-    switch (targetSub) {
-      case 'cafes': return 'Cafes & Fast Food (कैफे व फ़ास्ट फ़ूड)';
-      case 'pure-veg': return 'Pure Veg Family Dining (शुद्ध शाकाहारी भोजनालय)';
-      case 'dhaba': return 'Dhaba & Highway Dining (ढाबा व भोजन)';
-      case 'bakeries': return 'Bakeries & Sweet Shops (बेकरी व मिष्ठान)';
-      case 'non-veg': return 'Non-Veg Dining (नॉन-वेज रेस्टोरेंट)';
-      default: return 'All Restaurants & Dining';
-    }
+  const getSubCategoryTitle = () => {
+    if (targetSub === 'all') return 'All Restaurants & Food Spots';
+    const matched = categoryConfig.subCategories.find((s) => s.id === targetSub);
+    return matched ? matched.name : targetSub.replace('-', ' ').toUpperCase();
   };
 
   return (
-    <main className="p-3.5 space-y-3.5 relative z-10 animate-fade-in text-slate-800">
+    <main className="p-3.5 space-y-3.5 relative z-10 animate-fade-in text-slate-800 pb-16">
       {/* Header */}
       <div className="bg-white/85 backdrop-blur-md p-3.5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
         <div>
           <h2 className="text-sm font-black text-slate-900 capitalize">
-            {getCuisineTitle()}
+            {getSubCategoryTitle()}
           </h2>
-          <p className="text-[10px] text-slate-500">Live dining & food options in {selectedCity}</p>
+          <p className="text-[10px] text-slate-500">Live verified food spots & menus in {selectedCity}</p>
         </div>
         <button
           type="button"
@@ -78,7 +75,7 @@ export default function RestaurantsFeed({
         <div className="bg-white/80 rounded-2xl p-8 text-center border border-slate-200">
           <span className="text-3xl">🍔</span>
           <p className="text-slate-600 font-bold text-xs mt-2">
-            No dining options listed under {targetSub !== 'all' ? targetSub : 'this section'} in {selectedCity}.
+            No restaurants found under {targetSub !== 'all' ? targetSub : 'this category'} in {selectedCity}.
           </p>
         </div>
       ) : (
@@ -91,25 +88,24 @@ export default function RestaurantsFeed({
               <img
                 src={
                   item.image ||
-                  item.photo ||
-                  item.banner ||
-                  'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=700'
+                  (item.images && item.images[0]) ||
+                  'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=700'
                 }
-                alt={item.name || item.title}
+                alt={item.title || item.name}
                 loading="lazy"
                 className="w-full h-full object-cover"
                 onError={(e) => {
-                  e.target.src = 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=700';
+                  e.target.src = 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=700';
                 }}
               />
               <span className="absolute bottom-2.5 left-2.5 text-xs font-black px-2.5 py-1 rounded-xl text-white bg-slate-950/85 backdrop-blur-md border border-white/10">
-                {item.priceForTwo || item.price || item.rates || 'Dining Available'}
+                {item.price || item.priceForTwo || '₹ 400 for Two'}
               </span>
 
               <ListingDiscussionThread
                 listingId={item.id}
-                listingTitle={item.name || item.title}
-                sellerName={item.name || item.sellerName || 'Manager'}
+                listingTitle={item.title || item.name}
+                sellerName={item.title || item.name || 'Restaurant'}
                 sellerPhone={item.phone || item.whatsapp}
                 interestCount={item.interestCount || 0}
                 onNewNotification={onNewNotification}
@@ -118,9 +114,9 @@ export default function RestaurantsFeed({
 
             <div className="pt-0.5">
               <div className="flex items-start justify-between">
-                <h3 className="font-black text-slate-900 text-sm">{item.name || item.title}</h3>
-                <span className="text-[10px] font-bold text-rose-800 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-md shrink-0 ml-2">
-                  {(item.subCategory || item.cuisine || 'FOOD').toUpperCase()}
+                <h3 className="font-black text-slate-900 text-sm">{item.title || item.name}</h3>
+                <span className="text-[10px] font-bold text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md shrink-0 ml-2">
+                  {(item.subCategory || 'FOOD').toUpperCase()}
                 </span>
               </div>
 
@@ -130,14 +126,14 @@ export default function RestaurantsFeed({
 
               <div className="flex items-center justify-between text-[10px] text-slate-500 font-semibold mt-2 pt-2 border-t border-slate-100">
                 <span>📍 {item.location || selectedCity}</span>
-                <span className="text-emerald-700 font-bold">⭐ {item.rating || '4.8'} • {item.distance || '0.1 km away'}</span>
+                <span className="text-emerald-700 font-bold">{item.badge || item.timing || '🟢 Open Now'}</span>
               </div>
             </div>
 
             <ActionButtons
               phone={item.phone || '9876543210'}
               whatsapp={item.whatsapp || item.phone || '919876543210'}
-              message={`Namaste, I want to inquire about table booking / food order at "${item.name || item.title}".`}
+              message={`Namaste, I want to book a table / order food from "${item.title || item.name}" seen on TownHub.`}
             />
           </article>
         ))

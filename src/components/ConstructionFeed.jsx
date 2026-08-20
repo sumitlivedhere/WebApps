@@ -1,12 +1,13 @@
 import React, { useMemo } from 'react';
 import { useStoreSlice } from '../store/hyperlocalStore';
+import { getCategoryById } from '../data/taxonomyRegistry';
 import ActionButtons from './common/ActionButtons';
 import ListingDiscussionThread from './common/ListingDiscussionThread';
 
 export default function ConstructionFeed({
   listings: propListings,
   selectedSubCategory,
-  selectedSectorId,
+  selectedCategory,
   selectedCity = 'Alwar',
   searchQuery = '',
   onBack,
@@ -15,7 +16,8 @@ export default function ConstructionFeed({
   const storeListings = useStoreSlice('constructionListings');
   const allListings = propListings && propListings.length > 0 ? propListings : storeListings;
 
-  const targetSub = (selectedSubCategory || selectedSectorId || 'all').toLowerCase().trim();
+  const targetSub = (selectedSubCategory || selectedCategory || 'all').toLowerCase().trim();
+  const categoryConfig = getCategoryById('construction');
 
   const filteredListings = useMemo(() => {
     const q = (searchQuery || '').toLowerCase().trim();
@@ -27,8 +29,8 @@ export default function ConstructionFeed({
       const matchesCity = !city || loc.includes(city) || city.includes(loc) || !loc;
       if (!matchesCity) return false;
 
-      // 2. Strict Subcategory / Work Type Filter
-      const itemSub = (item.subCategory || item.workType || item.sub_category || '').toLowerCase().trim();
+      // 2. Subcategory Filter
+      const itemSub = (item.subCategory || item.category || item.sub_category || '').toLowerCase().trim();
       const matchesSub = targetSub === 'all' || itemSub === targetSub;
       if (!matchesSub) return false;
 
@@ -37,32 +39,28 @@ export default function ConstructionFeed({
       return (
         item.name?.toLowerCase().includes(q) ||
         item.title?.toLowerCase().includes(q) ||
-        item.contractorName?.toLowerCase().includes(q) ||
+        item.sellerName?.toLowerCase().includes(q) ||
         item.description?.toLowerCase().includes(q) ||
         item.location?.toLowerCase().includes(q)
       );
     });
   }, [allListings, targetSub, selectedCity, searchQuery]);
 
-  const getConstructionTitle = () => {
-    switch (targetSub) {
-      case 'building-contractors': return 'Building Thekedars & Contractors (ठेकेदार)';
-      case 'building-material': return 'Building Material, Sand & Bricks (भवन सामग्री)';
-      case 'jcb-excavator': return 'JCB & Earth Movers (जेसीबी व खुदाई)';
-      case 'interior-designers': return 'Interior & Modular Kitchen (इंटीरियर डिज़ाइनर)';
-      default: return 'All Construction & Material';
-    }
+  const getSubCategoryTitle = () => {
+    if (targetSub === 'all') return 'All Construction & Building Services';
+    const matched = categoryConfig.subCategories.find((s) => s.id === targetSub);
+    return matched ? matched.name : targetSub.replace('-', ' ').toUpperCase();
   };
 
   return (
-    <main className="p-3.5 space-y-3.5 relative z-10 animate-fade-in text-slate-800">
+    <main className="p-3.5 space-y-3.5 relative z-10 animate-fade-in text-slate-800 pb-16">
       {/* Header */}
       <div className="bg-white/85 backdrop-blur-md p-3.5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
         <div>
           <h2 className="text-sm font-black text-slate-900 capitalize">
-            {getConstructionTitle()}
+            {getSubCategoryTitle()}
           </h2>
-          <p className="text-[10px] text-slate-500">Verified contractors & machinery in {selectedCity}</p>
+          <p className="text-[10px] text-slate-500">Live verified contractors, materials & mistris in {selectedCity}</p>
         </div>
         <button
           type="button"
@@ -78,66 +76,65 @@ export default function ConstructionFeed({
         <div className="bg-white/80 rounded-2xl p-8 text-center border border-slate-200">
           <span className="text-3xl">🏗️</span>
           <p className="text-slate-600 font-bold text-xs mt-2">
-            No construction listings found under {targetSub !== 'all' ? targetSub : 'this category'} in {selectedCity}.
+            No listings found under {targetSub !== 'all' ? targetSub : 'this category'} in {selectedCity}.
           </p>
         </div>
       ) : (
-        filteredListings.map((c) => (
+        filteredListings.map((item) => (
           <article
-            key={c.id}
+            key={item.id}
             className="bg-white rounded-2xl overflow-hidden shadow-sm border border-slate-200 hover:shadow-md transition p-3.5 space-y-3 relative"
           >
             <div className="relative h-48 w-full bg-slate-100 rounded-2xl overflow-hidden shadow-inner">
               <img
                 src={
-                  c.image ||
-                  c.photo ||
-                  c.banner ||
-                  'https://images.unsplash.com/photo-1504307651254-35680f356dfd?w=700'
+                  item.image ||
+                  item.photo ||
+                  'https://images.unsplash.com/photo-1541888946425-d0fbb186156f?w=700'
                 }
-                alt={c.name || c.title}
+                alt={item.title || item.name}
                 loading="lazy"
                 className="w-full h-full object-cover"
                 onError={(e) => {
-                  e.target.src = 'https://images.unsplash.com/photo-1504307651254-35680f356dfd?w=700';
+                  e.target.src = 'https://images.unsplash.com/photo-1541888946425-d0fbb186156f?w=700';
                 }}
               />
               <span className="absolute bottom-2.5 left-2.5 text-xs font-black px-2.5 py-1 rounded-xl text-white bg-slate-950/85 backdrop-blur-md border border-white/10">
-                {c.price || c.rates || 'Competitive Rates'}
+                {item.price || item.rates || 'Rate on Request'}
               </span>
 
               <ListingDiscussionThread
-                listingId={c.id}
-                listingTitle={c.name || c.title}
-                sellerName={c.contractorName || c.sellerName || 'Contractor'}
-                sellerPhone={c.phone || c.whatsapp}
-                interestCount={c.interestCount || 0}
+                listingId={item.id}
+                listingTitle={item.title || item.name}
+                sellerName={item.sellerName || item.name || 'Contractor / Supplier'}
+                sellerPhone={item.phone || item.whatsapp}
+                interestCount={item.interestCount || 0}
                 onNewNotification={onNewNotification}
               />
             </div>
 
             <div className="pt-0.5">
               <div className="flex items-start justify-between">
-                <h3 className="font-black text-slate-900 text-sm">{c.name || c.title}</h3>
-                <span className="text-[10px] font-bold text-amber-900 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md shrink-0 ml-2">
-                  {(c.subCategory || c.workType || 'CONSTRUCTION').toUpperCase()}
+                <h3 className="font-black text-slate-900 text-sm">{item.title || item.name}</h3>
+                <span className="text-[10px] font-bold text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md shrink-0 ml-2">
+                  {(item.subCategory || 'CONSTRUCTION').toUpperCase()}
                 </span>
               </div>
 
-              {c.description && (
-                <p className="text-[11px] text-slate-600 mt-1 line-clamp-2">{c.description}</p>
+              {item.description && (
+                <p className="text-[11px] text-slate-600 mt-1 line-clamp-2">{item.description}</p>
               )}
 
               <div className="flex items-center justify-between text-[10px] text-slate-500 font-semibold mt-2 pt-2 border-t border-slate-100">
-                <span>📍 {c.location || selectedCity}</span>
-                <span className="text-emerald-700 font-bold">{c.experience || '5+ Yrs Exp'}</span>
+                <span>📍 {item.location || selectedCity}</span>
+                <span className="text-emerald-700 font-bold">{item.badge || '🟢 Verified Provider'}</span>
               </div>
             </div>
 
             <ActionButtons
-              phone={c.phone || '9876543210'}
-              whatsapp={c.whatsapp || c.phone || '919876543210'}
-              message={`Namaste, I want to inquire regarding construction work / machinery booking for "${c.name || c.title}".`}
+              phone={item.phone || '9876543210'}
+              whatsapp={item.whatsapp || item.phone || '919876543210'}
+              message={`Namaste, I want to inquire regarding construction services/material for "${item.title || item.name}" seen on TownHub.`}
             />
           </article>
         ))

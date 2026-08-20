@@ -1,68 +1,63 @@
 import React, { useMemo } from 'react';
 import { useStoreSlice } from '../store/hyperlocalStore';
+import { getCategoryById } from '../data/taxonomyRegistry';
 import ActionButtons from './common/ActionButtons';
 import ListingDiscussionThread from './common/ListingDiscussionThread';
 
 export default function EducationFeed({
-  listings: propListings,
   selectedSubCategory,
-  selectedExamId,
+  selectedCategory,
   selectedCity = 'Alwar',
   searchQuery = '',
   onBack,
   onNewNotification,
 }) {
   const storeListings = useStoreSlice('educationListings');
-  const allListings = propListings && propListings.length > 0 ? propListings : storeListings;
-
-  const targetSub = (selectedSubCategory || selectedExamId || 'all').toLowerCase().trim();
+  const targetSub = (selectedSubCategory || selectedCategory || 'all').toLowerCase().trim();
+  const categoryConfig = getCategoryById('education');
 
   const filteredListings = useMemo(() => {
     const q = (searchQuery || '').toLowerCase().trim();
     const city = (selectedCity || '').toLowerCase().trim();
 
-    return (allListings || []).filter((item) => {
+    return (storeListings || []).filter((item) => {
       // 1. City Filter
       const loc = (item.location || item.city || '').toLowerCase();
       const matchesCity = !city || loc.includes(city) || city.includes(loc) || !loc;
       if (!matchesCity) return false;
 
-      // 2. Strict Subcategory / Tuition Type Filter
-      const itemSub = (item.subCategory || item.tuitionType || item.sub_category || '').toLowerCase().trim();
+      // 2. Subcategory Filter
+      const itemSub = (item.subCategory || item.category || '').toLowerCase().trim();
       const matchesSub = targetSub === 'all' || itemSub === targetSub;
       if (!matchesSub) return false;
 
-      // 3. Search Query Filter
+      // 3. Search Filter
       if (!q) return true;
       return (
         item.name?.toLowerCase().includes(q) ||
         item.title?.toLowerCase().includes(q) ||
+        item.teacherName?.toLowerCase().includes(q) ||
         item.description?.toLowerCase().includes(q) ||
-        item.location?.toLowerCase().includes(q) ||
-        item.facultyName?.toLowerCase().includes(q)
+        item.location?.toLowerCase().includes(q)
       );
     });
-  }, [allListings, targetSub, selectedCity, searchQuery]);
+  }, [storeListings, targetSub, selectedCity, searchQuery]);
 
-  const getEducationTitle = () => {
-    switch (targetSub) {
-      case 'home-tuitions': return 'Home Tuition & Personal Tutors (होम ट्यूशन)';
-      case 'coaching-institutes': return 'Coaching Institutes (कोचिंग संस्थान)';
-      case 'competitive-exams': return 'Competitive Exam Prep (प्रतियोगी परीक्षा)';
-      case 'computer-institutes': return 'Computer & IT Training (कंप्यूटर सेंटर)';
-      default: return 'All Education & Coaching';
-    }
+  const getSubCategoryTitle = () => {
+    if (targetSub === 'all') return 'All Education, Tuitions & Coaching';
+    const matched = categoryConfig.subCategories.find((s) => s.id === targetSub);
+    return matched ? matched.name : targetSub.replace('-', ' ').toUpperCase();
   };
 
   return (
-    <main className="p-3.5 space-y-3.5 relative z-10 animate-fade-in text-slate-800">
+    <main className="p-3.5 space-y-3.5 relative z-10 animate-fade-in text-slate-800 pb-16">
       {/* Header */}
       <div className="bg-white/85 backdrop-blur-md p-3.5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
         <div>
           <h2 className="text-sm font-black text-slate-900 capitalize">
-            {getEducationTitle()}
+            {getSubCategoryTitle()}
           </h2>
-          <p className="text-[10px] text-slate-500">Verified teachers & institutes in {selectedCity}</p>
+          <p className="text-[10px] text-slate-500">Live verified teachers & coaching batches in {selectedCity}</p>
         </div>
         <button
           type="button"
@@ -78,7 +73,7 @@ export default function EducationFeed({
         <div className="bg-white/80 rounded-2xl p-8 text-center border border-slate-200">
           <span className="text-3xl">🎓</span>
           <p className="text-slate-600 font-bold text-xs mt-2">
-            No education listings found under {targetSub !== 'all' ? targetSub : 'this category'} in {selectedCity}.
+            No coaching batches found under {targetSub !== 'all' ? targetSub : 'this category'} in {selectedCity}.
           </p>
         </div>
       ) : (
@@ -87,12 +82,10 @@ export default function EducationFeed({
             key={item.id}
             className="bg-white rounded-2xl overflow-hidden shadow-sm border border-slate-200 hover:shadow-md transition p-3.5 space-y-3 relative"
           >
-            <div className="relative h-48 w-full bg-slate-100 rounded-2xl overflow-hidden shadow-inner">
+            <div className="relative h-44 w-full bg-slate-100 rounded-2xl overflow-hidden shadow-inner">
               <img
                 src={
                   item.image ||
-                  item.photo ||
-                  item.banner ||
                   'https://images.unsplash.com/photo-1523240795612-9a054b0db644?w=700'
                 }
                 alt={item.name || item.title}
@@ -103,41 +96,46 @@ export default function EducationFeed({
                 }}
               />
               <span className="absolute bottom-2.5 left-2.5 text-xs font-black px-2.5 py-1 rounded-xl text-white bg-slate-950/85 backdrop-blur-md border border-white/10">
-                {item.fees || item.fee || item.price || 'Batch Admission Open'}
+                {item.price || item.fee || 'Fee on Request'}
               </span>
 
               <ListingDiscussionThread
                 listingId={item.id}
                 listingTitle={item.name || item.title}
-                sellerName={item.facultyName || item.name || 'Educator'}
+                sellerName={item.teacherName || item.name || 'Educator'}
                 sellerPhone={item.phone || item.whatsapp}
                 interestCount={item.interestCount || 0}
                 onNewNotification={onNewNotification}
               />
             </div>
 
-            <div className="pt-0.5">
+            <div className="pt-0.5 space-y-1">
               <div className="flex items-start justify-between">
-                <h3 className="font-black text-slate-900 text-sm">{item.name || item.title}</h3>
-                <span className="text-[10px] font-bold text-blue-800 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-md shrink-0 ml-2">
+                <div>
+                  <h3 className="font-black text-slate-900 text-sm">{item.name || item.title}</h3>
+                  {item.teacherName && (
+                    <p className="text-[10px] text-indigo-700 font-bold mt-0.5">👨‍🏫 {item.teacherName}</p>
+                  )}
+                </div>
+                <span className="text-[10px] font-bold text-indigo-800 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-md shrink-0 ml-2">
                   {(item.subCategory || 'EDUCATION').toUpperCase()}
                 </span>
               </div>
 
               {item.description && (
-                <p className="text-[11px] text-slate-600 mt-1 line-clamp-2">{item.description}</p>
+                <p className="text-[11px] text-slate-600 line-clamp-2 leading-relaxed">{item.description}</p>
               )}
 
-              <div className="flex items-center justify-between text-[10px] text-slate-500 font-semibold mt-2 pt-2 border-t border-slate-100">
+              <div className="flex items-center justify-between text-[10px] text-slate-500 font-semibold pt-2 border-t border-slate-100">
                 <span>📍 {item.location || selectedCity}</span>
-                <span className="text-emerald-700 font-bold">{item.experience || 'Verified Faculty'}</span>
+                <span className="text-emerald-700 font-bold">{item.badge || item.timing || '🟢 New Batch Open'}</span>
               </div>
             </div>
 
             <ActionButtons
               phone={item.phone || '9876543210'}
               whatsapp={item.whatsapp || item.phone || '919876543210'}
-              message={`Namaste, I want to inquire regarding admission/classes at "${item.name || item.title}".`}
+              message={`Namaste, I found "${item.name || item.title}" on TownHub Education. I want to inquire about batch timings & book a trial demo class in ${selectedCity}.`}
             />
           </article>
         ))
