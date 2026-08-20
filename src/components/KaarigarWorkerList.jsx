@@ -1,51 +1,71 @@
-import React, { useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useStoreSlice } from '../store/hyperlocalStore';
-import { getCategoryById } from '../data/taxonomyRegistry';
+import { getCategoryById, sanitizeSubCategoryId } from '../data/taxonomyRegistry';
 import ActionButtons from './common/ActionButtons';
 import ListingDiscussionThread from './common/ListingDiscussionThread';
 
 export default function KaarigarWorkerList({
+  selectedSubCategory,
   selectedTrade,
-  selectedCategory,
+  subCategory,
   selectedCity = 'Alwar',
   searchQuery = '',
   onBack,
   onNewNotification,
 }) {
-  const storeWorkers = useStoreSlice('kaarigarWorkers');
-  const targetTrade = (selectedTrade || selectedCategory || 'all').toLowerCase().trim();
-  const categoryConfig = getCategoryById('kaarigar');
+  const storeWorkers = useStoreSlice('kaarigarWorkers') || [];
+  const categoryConfig = getCategoryById('kaarigar') || { subCategories: [] };
+  const subCategories = Array.isArray(categoryConfig.subCategories) ? categoryConfig.subCategories : [];
+
+  // Accept selectedSubCategory, selectedTrade, or subCategory from router
+  const incomingSub = selectedSubCategory || selectedTrade || subCategory || 'all';
+  const [activeTrade, setActiveTrade] = useState(incomingSub);
+
+  // Sync state whenever navigation changes
+  useEffect(() => {
+    setActiveTrade(incomingSub);
+  }, [incomingSub]);
+
+  const targetTrade = sanitizeSubCategoryId('kaarigar', activeTrade);
 
   const filteredWorkers = useMemo(() => {
     const q = (searchQuery || '').toLowerCase().trim();
     const city = (selectedCity || '').toLowerCase().trim();
 
-    return (storeWorkers || []).filter((item) => {
+    return storeWorkers.filter((item) => {
+      if (!item) return false;
+
       // 1. City Filter
       const loc = (item.location || item.city || '').toLowerCase();
       const matchesCity = !city || loc.includes(city) || city.includes(loc) || !loc;
       if (!matchesCity) return false;
 
-      // 2. Subcategory Filter
-      const itemSub = (item.subCategory || item.trade || item.tradeType || '').toLowerCase().trim();
-      const matchesTrade = targetTrade === 'all' || itemSub === targetTrade;
-      if (!matchesTrade) return false;
+      // 2. Strict Subcategory / Trade Match
+      if (targetTrade !== 'all') {
+        const rawItemSub = String(item.subCategory || item.trade || item.tradeType || '').toLowerCase().trim();
+        const sanitizedItemSub = sanitizeSubCategoryId('kaarigar', rawItemSub);
 
-      // 3. Search Query Filter
+        const isMatch =
+          sanitizedItemSub === targetTrade ||
+          rawItemSub === targetTrade;
+
+        if (!isMatch) return false;
+      }
+
+      // 3. Search Filter
       if (!q) return true;
       return (
         item.name?.toLowerCase().includes(q) ||
         item.title?.toLowerCase().includes(q) ||
         item.description?.toLowerCase().includes(q) ||
-        item.location?.toLowerCase().includes(q) ||
-        item.experience?.toLowerCase().includes(q)
+        item.location?.toLowerCase().includes(q)
       );
     });
   }, [storeWorkers, targetTrade, selectedCity, searchQuery]);
 
   const getSubCategoryTitle = () => {
     if (targetTrade === 'all') return 'All Kaarigars & Mistris (सभी कारीगर)';
-    const matched = categoryConfig.subCategories.find((s) => s.id === targetTrade);
+    const matched = subCategories.find((s) => s.id === targetTrade);
     return matched ? matched.name : targetTrade.replace('-', ' ').toUpperCase();
   };
 
@@ -57,7 +77,9 @@ export default function KaarigarWorkerList({
           <h2 className="text-sm font-black text-slate-900 capitalize">
             {getSubCategoryTitle()}
           </h2>
-          <p className="text-[10px] text-slate-500">Live verified technicians & mistris in {selectedCity}</p>
+          <p className="text-[10px] text-slate-500">
+            {filteredWorkers.length} verified technicians in {selectedCity}
+          </p>
         </div>
         <button
           type="button"
@@ -68,13 +90,51 @@ export default function KaarigarWorkerList({
         </button>
       </div>
 
+      {/* Interactive Horizontal Trade Switcher Strip */}
+      <div className="flex items-center space-x-1.5 overflow-x-auto pb-1 scrollbar-none">
+        <button
+          type="button"
+          onClick={() => setActiveTrade('all')}
+          className={`px-3 py-1.5 rounded-xl text-[11px] font-black shrink-0 transition cursor-pointer ${
+            targetTrade === 'all'
+              ? 'bg-blue-600 text-white shadow-sm scale-105'
+              : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
+          }`}
+        >
+          ⚡ All Trades
+        </button>
+
+        {subCategories.map((sub) => (
+          <button
+            key={sub.id}
+            type="button"
+            onClick={() => setActiveTrade(sub.id)}
+            className={`px-3 py-1.5 rounded-xl text-[11px] font-bold shrink-0 transition cursor-pointer flex items-center space-x-1 ${
+              targetTrade === sub.id
+                ? 'bg-blue-600 text-white font-black shadow-sm scale-105'
+                : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
+            }`}
+          >
+            <span>{sub.icon}</span>
+            <span>{String(sub.name || '').split('(')[0].trim()}</span>
+          </button>
+        ))}
+      </div>
+
       {/* Cards List */}
       {filteredWorkers.length === 0 ? (
         <div className="bg-white/80 rounded-2xl p-8 text-center border border-slate-200">
           <span className="text-3xl">🛠️</span>
           <p className="text-slate-600 font-bold text-xs mt-2">
-            No technicians found under {targetTrade !== 'all' ? targetTrade : 'this trade'} in {selectedCity}.
+            No technicians found under "{getSubCategoryTitle().split('(')[0]}" in {selectedCity}.
           </p>
+          <button
+            type="button"
+            onClick={() => setActiveTrade('all')}
+            className="mt-3 px-3 py-1.5 bg-blue-600 text-white text-xs font-black rounded-xl cursor-pointer"
+          >
+            View All Trades
+          </button>
         </div>
       ) : (
         filteredWorkers.map((item) => (
@@ -119,7 +179,7 @@ export default function KaarigarWorkerList({
                   )}
                 </div>
                 <span className="text-[10px] font-bold text-blue-800 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-md shrink-0 ml-2">
-                  {(item.subCategory || 'TRADE').toUpperCase()}
+                  {String(item.subCategory || 'TRADE').toUpperCase()}
                 </span>
               </div>
 
@@ -136,7 +196,7 @@ export default function KaarigarWorkerList({
             <ActionButtons
               phone={item.phone || '9876543210'}
               whatsapp={item.whatsapp || item.phone || '919876543210'}
-              message={`Namaste ${item.name || ''}, I found your profile on TownHub Kaarigar. I need repair/service work at my house in ${selectedCity}. Are you available today?`}
+              message={`Namaste ${item.name || ''}, I found your profile on TownHub Kaarigar. I need repair/service work in ${selectedCity}. Are you available today?`}
             />
           </article>
         ))
