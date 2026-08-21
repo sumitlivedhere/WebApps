@@ -1,8 +1,138 @@
-import React, { useMemo } from 'react';
-import { useStoreSlice } from '../store/hyperlocalStore';
+import React, { useMemo, useState } from 'react';
+import { useStoreSlice, useInterestSlice, hyperlocalStore } from '../store/hyperlocalStore';
 import { getCategoryById } from '../data/taxonomyRegistry';
 import ActionButtons from './common/ActionButtons';
-import ListingDiscussionThread from './common/ListingDiscussionThread';
+import ListingDetailModal from './common/ListingDetailModal';
+
+function MarketCardItem({ item, selectedCity, onSelect, getMessageTemplate }) {
+  const interestCount = useInterestSlice(
+    item.id,
+    Number(item.interestCount || item.interest_count || 0)
+  );
+
+  const handleStarClick = (e) => {
+    e.stopPropagation();
+    hyperlocalStore.incrementInterest(
+      item.id,
+      interestCount,
+      item.title || item.name,
+      item.shopName || item.sellerName || 'Merchant'
+    );
+  };
+
+  const gallery =
+    item.images && item.images.length > 0
+      ? item.images
+      : item.image
+      ? [item.image]
+      : ['https://images.unsplash.com/photo-1441986300917-64674bd600d8?w=700'];
+
+  const coverImg = gallery[0];
+
+  const mapUrl =
+    item.mapUrl ||
+    (item.lat && item.lng
+      ? `https://www.google.com/maps/search/?api=1&query=${item.lat},${item.lng}`
+      : null);
+
+  return (
+    <article
+      onClick={onSelect}
+      className={`bg-white rounded-2xl overflow-hidden shadow-xs border transition p-3.5 space-y-3 relative cursor-pointer hover:shadow-md active:scale-99 ${
+        item.isNew ? 'border-emerald-400 ring-2 ring-emerald-400/20' : 'border-slate-200'
+      }`}
+    >
+      {/* Photo Banner */}
+      <div className="relative h-48 w-full bg-slate-100 rounded-2xl overflow-hidden shadow-inner select-none">
+        <img
+          src={coverImg}
+          alt={item.title || item.name}
+          loading="lazy"
+          className="w-full h-full object-cover"
+          onError={(e) => {
+            e.target.src = 'https://images.unsplash.com/photo-1441986300917-64674bd600d8?w=700';
+          }}
+        />
+
+        {/* Price / Offer Tag */}
+        <span className="absolute bottom-2.5 left-2.5 text-xs font-black px-2.5 py-1 rounded-xl text-white bg-slate-950/85 backdrop-blur-md border border-white/10">
+          {item.price || 'Special Deal'}
+        </span>
+
+        {/* Multi-Photo Indicator */}
+        {gallery.length > 1 && (
+          <span className="absolute top-2.5 left-2.5 text-[9px] font-black px-2 py-0.5 rounded-lg text-white bg-slate-950/80 backdrop-blur-xs border border-white/10">
+            📷 {gallery.length} Photos
+          </span>
+        )}
+
+        {/* Live Star Interest Badge */}
+        <button
+          type="button"
+          onClick={handleStarClick}
+          className="absolute top-2.5 right-2.5 px-2 py-1 rounded-xl bg-slate-950/80 hover:bg-slate-950 text-amber-300 border border-amber-400/30 text-[10px] font-black flex items-center space-x-1 backdrop-blur-xs transition active:scale-90 cursor-pointer shadow-md"
+        >
+          <span>⭐</span>
+          <span>{interestCount}</span>
+        </button>
+      </div>
+
+      {/* Card Details */}
+      <div className="pt-0.5 space-y-1.5">
+        <div className="flex items-start justify-between">
+          <div className="min-w-0">
+            <h3 className="font-black text-slate-900 text-sm leading-snug truncate max-w-[220px]">
+              {item.title || item.name}
+            </h3>
+            {(item.shopName || item.sellerName) && (
+              <p className="text-[10px] text-emerald-700 font-bold mt-0.5 truncate">
+                🛍️ {item.shopName || item.sellerName}
+              </p>
+            )}
+          </div>
+          <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md shrink-0 ml-2">
+            {String(item.subCategory || 'DEAL').toUpperCase()}
+          </span>
+        </div>
+
+        {item.description && (
+          <p className="text-[11px] text-slate-600 line-clamp-2 leading-relaxed">
+            {item.description}
+          </p>
+        )}
+
+        <div className="flex items-center justify-between text-[11px] pt-2 border-t border-slate-100">
+          <div className="flex items-center space-x-1 text-slate-700 font-semibold truncate max-w-[220px]">
+            <span>📍</span>
+            <span className="truncate">{item.location || selectedCity}</span>
+          </div>
+
+          {mapUrl && (
+            <a
+              href={mapUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="px-2 py-1 bg-cyan-50 hover:bg-cyan-100 text-cyan-800 border border-cyan-200 rounded-lg text-[10px] font-black flex items-center space-x-1 shrink-0 transition"
+            >
+              <span>🗺️</span>
+              <span>View Map</span>
+            </a>
+          )}
+        </div>
+      </div>
+
+      {/* 1-Click Action Buttons */}
+      <div onClick={(e) => e.stopPropagation()}>
+        <ActionButtons
+          phone={item.phone || '9876543210'}
+          whatsapp={item.whatsapp || item.phone || '919876543210'}
+          message={getMessageTemplate(item)}
+        />
+      </div>
+    </article>
+  );
+}
 
 export default function MarketFeed({
   products: propProducts,
@@ -13,54 +143,79 @@ export default function MarketFeed({
   onBack,
   onNewNotification,
 }) {
-  const storeProducts = useStoreSlice('marketProducts');
+  const storeProducts = useStoreSlice('marketProducts') || [];
   const allProducts = propProducts && propProducts.length > 0 ? propProducts : storeProducts;
 
   const targetSub = (selectedSubCategory || selectedCategory || 'all').toLowerCase().trim();
-  const categoryConfig = getCategoryById('market');
+  const categoryConfig = getCategoryById('market') || { subCategories: [] };
+  const subCategories = categoryConfig.subCategories || [];
+
+  const [selectedDetailItem, setSelectedDetailItem] = useState(null);
 
   const filteredProducts = useMemo(() => {
     const q = (searchQuery || '').toLowerCase().trim();
     const city = (selectedCity || '').toLowerCase().trim();
 
-    return (allProducts || []).filter((item) => {
-      // 1. City Filter
-      const loc = (item.location || item.city || '').toLowerCase();
-      const matchesCity = !city || loc.includes(city) || city.includes(loc) || !loc;
-      if (!matchesCity) return false;
+    const uniqueMap = new Map();
+
+    (allProducts || []).forEach((item) => {
+      if (!item || !item.id) return;
+
+      // 1. City Match
+      const itemCity = (item.city || '').toLowerCase().trim();
+      const itemLoc = (item.location || '').toLowerCase().trim();
+      const matchesCity =
+        !city ||
+        itemCity === city ||
+        itemLoc.includes(city) ||
+        city.includes(itemCity);
+
+      if (!matchesCity) return;
 
       // 2. Strict Subcategory Filter
       const itemSub = (item.subCategory || item.sub_category || '').toLowerCase().trim();
       const matchesSub = targetSub === 'all' || itemSub === targetSub;
-      if (!matchesSub) return false;
+      if (!matchesSub) return;
 
       // 3. Search Query Filter
-      if (!q) return true;
-      return (
-        item.name?.toLowerCase().includes(q) ||
-        item.title?.toLowerCase().includes(q) ||
-        item.shopName?.toLowerCase().includes(q) ||
-        item.sellerName?.toLowerCase().includes(q) ||
-        item.description?.toLowerCase().includes(q) ||
-        item.location?.toLowerCase().includes(q)
-      );
+      if (q) {
+        const matchesQuery =
+          item.name?.toLowerCase().includes(q) ||
+          item.title?.toLowerCase().includes(q) ||
+          item.shopName?.toLowerCase().includes(q) ||
+          item.sellerName?.toLowerCase().includes(q) ||
+          item.description?.toLowerCase().includes(q) ||
+          item.location?.toLowerCase().includes(q);
+        if (!matchesQuery) return;
+      }
+
+      uniqueMap.set(String(item.id), item);
     });
+
+    return Array.from(uniqueMap.values());
   }, [allProducts, targetSub, selectedCity, searchQuery]);
 
   const getMarketTitle = () => {
     if (targetSub === 'all') return 'All Market & Retail Deals';
-    const sub = categoryConfig.subCategories.find((s) => s.id === targetSub);
+    const sub = subCategories.find((s) => s.id === targetSub);
     return sub ? sub.name : targetSub.replace('-', ' ').toUpperCase();
   };
 
+  const getMessageTemplate = (item) => {
+    return `Namaste ${item.shopName || item.sellerName || ''}, I want to inquire about "${item.title || item.name}" seen on TownHub Market in ${selectedCity}. Is this offer/product currently available?`;
+  };
+
   return (
-    <main className="p-3.5 space-y-3.5 relative z-10 animate-fade-in text-slate-800">
-      <div className="bg-white/85 backdrop-blur-md p-3.5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+    <main className="p-3.5 space-y-3.5 relative z-10 animate-fade-in text-slate-800 pb-16">
+      {/* Header */}
+      <div className="bg-white/85 backdrop-blur-md p-3.5 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
         <div>
           <h2 className="text-sm font-black text-slate-900 capitalize">
             {getMarketTitle()}
           </h2>
-          <p className="text-[10px] text-slate-500">Live verified offers in {selectedCity}</p>
+          <p className="text-[10px] text-slate-500">
+            {filteredProducts.length} live verified offers & products in {selectedCity}
+          </p>
         </div>
         <button
           type="button"
@@ -71,6 +226,7 @@ export default function MarketFeed({
         </button>
       </div>
 
+      {/* Cards List */}
       {filteredProducts.length === 0 ? (
         <div className="bg-white/80 rounded-2xl p-8 text-center border border-slate-200">
           <span className="text-3xl">🛒</span>
@@ -80,59 +236,24 @@ export default function MarketFeed({
         </div>
       ) : (
         filteredProducts.map((p) => (
-          <article
+          <MarketCardItem
             key={p.id}
-            className="bg-white rounded-2xl overflow-hidden shadow-sm border border-slate-200 hover:shadow-md transition p-3.5 space-y-3 relative"
-          >
-            <div className="relative h-48 w-full bg-slate-100 rounded-2xl overflow-hidden shadow-inner">
-              <img
-                src={p.image || 'https://images.unsplash.com/photo-1441986300917-64674bd600d8?w=700'}
-                alt={p.title || p.name}
-                loading="lazy"
-                className="w-full h-full object-cover"
-                onError={(e) => {
-                  e.target.src = 'https://images.unsplash.com/photo-1441986300917-64674bd600d8?w=700';
-                }}
-              />
-              <span className="absolute bottom-2.5 left-2.5 text-xs font-black px-2.5 py-1 rounded-xl text-white bg-slate-950/85 backdrop-blur-md border border-white/10">
-                {p.price || 'Special Deal'}
-              </span>
-
-              <ListingDiscussionThread
-                listingId={p.id}
-                listingTitle={p.title || p.name}
-                sellerName={p.shopName || p.sellerName || 'Merchant'}
-                sellerPhone={p.phone || p.whatsapp}
-                interestCount={p.interestCount || 0}
-                onNewNotification={onNewNotification}
-              />
-            </div>
-
-            <div className="pt-0.5">
-              <div className="flex items-start justify-between">
-                <h3 className="font-black text-slate-900 text-sm">{p.title || p.name}</h3>
-                <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md shrink-0 ml-2">
-                  {(p.subCategory || 'DEAL').toUpperCase()}
-                </span>
-              </div>
-
-              {p.description && (
-                <p className="text-[11px] text-slate-600 mt-1 line-clamp-2">{p.description}</p>
-              )}
-
-              <div className="flex items-center justify-between text-[10px] text-slate-500 font-semibold mt-2 pt-2 border-t border-slate-100">
-                <span>📍 {p.location || selectedCity}</span>
-                <span className="text-emerald-700 font-bold">{p.badge || '🟢 Active Offer'}</span>
-              </div>
-            </div>
-
-            <ActionButtons
-              phone={p.phone || '9876543210'}
-              whatsapp={p.whatsapp || p.phone || '919876543210'}
-              message={`Namaste, I want to inquire about "${p.title || p.name}" seen on TownHub Market.`}
-            />
-          </article>
+            item={p}
+            selectedCity={selectedCity}
+            onSelect={() => setSelectedDetailItem(p)}
+            getMessageTemplate={getMessageTemplate}
+          />
         ))
+      )}
+
+      {/* Dedicated Detail View Modal */}
+      {selectedDetailItem && (
+        <ListingDetailModal
+          item={selectedDetailItem}
+          selectedCity={selectedCity}
+          onClose={() => setSelectedDetailItem(null)}
+          onNewNotification={onNewNotification}
+        />
       )}
     </main>
   );

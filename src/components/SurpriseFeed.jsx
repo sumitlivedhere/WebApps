@@ -1,8 +1,137 @@
-import React, { useState, useMemo } from 'react';
-import { TAXONOMY_REGISTRY, getCategoryById } from '../data/taxonomyRegistry';
-import { useAllListingsSlice } from '../store/hyperlocalStore';
+import React, { useMemo, useState } from 'react';
+import { useStoreSlice, useInterestSlice, hyperlocalStore } from '../store/hyperlocalStore';
 import ActionButtons from './common/ActionButtons';
-import ListingDiscussionThread from './common/ListingDiscussionThread';
+import ListingDetailModal from './common/ListingDetailModal';
+
+function SurpriseCardItem({ item, selectedCity, onSelect, getMessageTemplate }) {
+  const interestCount = useInterestSlice(
+    item.id,
+    Number(item.interestCount || item.interest_count || 0)
+  );
+
+  const handleStarClick = (e) => {
+    e.stopPropagation();
+    hyperlocalStore.incrementInterest(
+      item.id,
+      interestCount,
+      item.title || item.name,
+      item.sellerName || item.brand || 'Surprise Partner'
+    );
+  };
+
+  const gallery =
+    item.images && item.images.length > 0
+      ? item.images
+      : item.image
+      ? [item.image]
+      : ['https://images.unsplash.com/photo-1513151233558-d860c5398176?w=700'];
+
+  const coverImg = gallery[0];
+
+  const mapUrl =
+    item.mapUrl ||
+    (item.lat && item.lng
+      ? `https://www.google.com/maps/search/?api=1&query=${item.lat},${item.lng}`
+      : null);
+
+  return (
+    <article
+      onClick={onSelect}
+      className={`bg-white rounded-2xl overflow-hidden shadow-xs border transition p-3.5 space-y-3 relative cursor-pointer hover:shadow-md active:scale-99 ${
+        item.isNew ? 'border-amber-400 ring-2 ring-amber-400/20' : 'border-slate-200'
+      }`}
+    >
+      {/* Photo Banner */}
+      <div className="relative h-48 w-full bg-slate-100 rounded-2xl overflow-hidden shadow-inner select-none">
+        <img
+          src={coverImg}
+          alt={item.title || item.name}
+          loading="lazy"
+          className="w-full h-full object-cover"
+          onError={(e) => {
+            e.target.src = 'https://images.unsplash.com/photo-1513151233558-d860c5398176?w=700';
+          }}
+        />
+
+        {/* Surprise Discount / Price Tag */}
+        <span className="absolute bottom-2.5 left-2.5 text-xs font-black px-2.5 py-1 rounded-xl text-white bg-amber-950/90 backdrop-blur-md border border-amber-400/30">
+          🎁 {item.price || item.discount || 'Special Surprise Deal'}
+        </span>
+
+        {/* Multi-Photo Indicator */}
+        {gallery.length > 1 && (
+          <span className="absolute top-2.5 left-2.5 text-[9px] font-black px-2 py-0.5 rounded-lg text-white bg-slate-950/80 backdrop-blur-xs border border-white/10">
+            📷 {gallery.length} Photos
+          </span>
+        )}
+
+        {/* Live Star Interest Badge */}
+        <button
+          type="button"
+          onClick={handleStarClick}
+          className="absolute top-2.5 right-2.5 px-2 py-1 rounded-xl bg-slate-950/80 hover:bg-slate-950 text-amber-300 border border-amber-400/30 text-[10px] font-black flex items-center space-x-1 backdrop-blur-xs transition active:scale-90 cursor-pointer shadow-md"
+        >
+          <span>⭐</span>
+          <span>{interestCount}</span>
+        </button>
+      </div>
+
+      {/* Card Details */}
+      <div className="pt-0.5 space-y-1.5">
+        <div className="flex items-start justify-between">
+          <div className="min-w-0">
+            <h3 className="font-black text-slate-900 text-sm leading-snug truncate max-w-[220px]">
+              {item.title || item.name}
+            </h3>
+            {(item.sellerName || item.brand) && (
+              <p className="text-[10px] text-amber-700 font-bold mt-0.5 truncate">
+                ⚡ {item.sellerName || item.brand}
+              </p>
+            )}
+          </div>
+          <span className="text-[10px] font-bold text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md shrink-0 ml-2">
+            SURPRISE
+          </span>
+        </div>
+
+        {item.description && (
+          <p className="text-[11px] text-slate-600 line-clamp-2 leading-relaxed">
+            {item.description}
+          </p>
+        )}
+
+        <div className="flex items-center justify-between text-[11px] pt-2 border-t border-slate-100">
+          <div className="flex items-center space-x-1 text-slate-700 font-semibold truncate max-w-[220px]">
+            <span>📍</span>
+            <span className="truncate">{item.location || selectedCity}</span>
+          </div>
+
+          {mapUrl && (
+            <a
+              href={mapUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="px-2 py-1 bg-cyan-50 hover:bg-cyan-100 text-cyan-800 border border-cyan-200 rounded-lg text-[10px] font-black flex items-center space-x-1 shrink-0 transition"
+            >
+              <span>🗺️</span>
+              <span>View Map</span>
+            </a>
+          )}
+        </div>
+      </div>
+
+      {/* 1-Click Action Buttons */}
+      <div onClick={(e) => e.stopPropagation()}>
+        <ActionButtons
+          phone={item.phone || '9876543210'}
+          whatsapp={item.whatsapp || item.phone || '919876543210'}
+          message={getMessageTemplate(item)}
+        />
+      </div>
+    </article>
+  );
+}
 
 export default function SurpriseFeed({
   selectedCity = 'Alwar',
@@ -10,191 +139,97 @@ export default function SurpriseFeed({
   onBack,
   onNewNotification,
 }) {
-  const allListings = useAllListingsSlice();
-  const [activeCategoryFilter, setActiveCategoryFilter] = useState('all');
-  const [shuffleSeed, setShuffleSeed] = useState(0);
+  const storeSurprise = useStoreSlice('surpriseListings') || [];
+  const [selectedDetailItem, setSelectedDetailItem] = useState(null);
 
-  // Filter and pseudo-randomly shuffle on demand
-  const surpriseListings = useMemo(() => {
+  const filteredSurprise = useMemo(() => {
     const q = (searchQuery || '').toLowerCase().trim();
     const city = (selectedCity || '').toLowerCase().trim();
-    const filterCat = activeCategoryFilter.toLowerCase().trim();
 
-    const filtered = (allListings || []).filter((item) => {
-      // 1. City Filter
-      const loc = (item.location || item.city || '').toLowerCase();
-      const matchesCity = !city || loc.includes(city) || city.includes(loc) || !loc;
-      if (!matchesCity) return false;
+    const uniqueMap = new Map();
 
-      // 2. Category Filter Pill
-      const itemCat = (item.category || '').toLowerCase().trim();
-      const matchesCat = filterCat === 'all' || itemCat === filterCat;
-      if (!matchesCat) return false;
+    (storeSurprise || []).forEach((item) => {
+      if (!item || !item.id) return;
 
-      // 3. Search Query
-      if (!q) return true;
-      return (
-        item.title?.toLowerCase().includes(q) ||
-        item.name?.toLowerCase().includes(q) ||
-        item.description?.toLowerCase().includes(q) ||
-        item.location?.toLowerCase().includes(q) ||
-        item.sellerName?.toLowerCase().includes(q)
-      );
+      const itemCity = (item.city || '').toLowerCase().trim();
+      const itemLoc = (item.location || '').toLowerCase().trim();
+      const matchesCity =
+        !city ||
+        itemCity === city ||
+        itemLoc.includes(city) ||
+        city.includes(itemCity);
+
+      if (!matchesCity) return;
+
+      if (q) {
+        const matchesQuery =
+          item.title?.toLowerCase().includes(q) ||
+          item.name?.toLowerCase().includes(q) ||
+          item.sellerName?.toLowerCase().includes(q) ||
+          item.description?.toLowerCase().includes(q) ||
+          item.location?.toLowerCase().includes(q);
+        if (!matchesQuery) return;
+      }
+
+      uniqueMap.set(String(item.id), item);
     });
 
-    // Deterministic shuffle using seed
-    return [...filtered].sort(() => 0.5 - Math.random());
-  }, [allListings, selectedCity, activeCategoryFilter, searchQuery, shuffleSeed]);
+    return Array.from(uniqueMap.values());
+  }, [storeSurprise, selectedCity, searchQuery]);
+
+  const getMessageTemplate = (item) => {
+    return `Namaste, I want to claim / inquire regarding the surprise offer "${item.title || item.name}" seen on TownHub in ${selectedCity}.`;
+  };
 
   return (
-    <main className="p-3.5 space-y-3.5 relative z-10 animate-fade-in text-slate-800 pb-20">
-      {/* Header Banner */}
-      <div className="bg-gradient-to-r from-amber-500 via-orange-500 to-yellow-500 p-4 rounded-3xl text-slate-950 shadow-lg flex items-center justify-between border border-amber-300/40">
+    <main className="p-3.5 space-y-3.5 relative z-10 animate-fade-in text-slate-800 pb-16">
+      {/* Header */}
+      <div className="bg-white/85 backdrop-blur-md p-3.5 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
         <div>
-          <div className="flex items-center space-x-1.5">
-            <span className="text-2xl animate-bounce">🎲</span>
-            <h2 className="text-base font-black leading-tight">
-              Surprise Discovery (टाउन एक्सप्लोरर)
-            </h2>
-          </div>
-          <p className="text-[11px] font-bold text-amber-950 mt-0.5">
-            Handpicked & verified cross-sector listings in {selectedCity}
+          <h2 className="text-sm font-black text-slate-900 capitalize">
+            🎁 Hyperlocal Surprise & Flash Deals
+          </h2>
+          <p className="text-[10px] text-slate-500">
+            {filteredSurprise.length} exclusive town offers in {selectedCity}
           </p>
         </div>
-
-        <div className="flex items-center space-x-2 shrink-0">
-          <button
-            type="button"
-            onClick={() => setShuffleSeed((prev) => prev + 1)}
-            className="p-2 bg-slate-950 hover:bg-slate-900 text-amber-300 rounded-xl text-xs font-black active:scale-90 transition cursor-pointer shadow-md flex items-center space-x-1"
-            title="Roll for new surprise deals"
-          >
-            <span>🎲</span>
-            <span className="hidden sm:inline">Shuffle</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={onBack}
-            className="text-xs bg-slate-950 text-white px-3 py-2 rounded-xl font-black active:scale-95 transition cursor-pointer"
-          >
-            ← Back
-          </button>
-        </div>
-      </div>
-
-      {/* Category Filter Pills */}
-      <div className="flex items-center space-x-1.5 overflow-x-auto pb-1 scrollbar-none">
         <button
           type="button"
-          onClick={() => setActiveCategoryFilter('all')}
-          className={`px-3 py-1.5 rounded-xl text-[10px] font-black shrink-0 transition cursor-pointer ${
-            activeCategoryFilter === 'all'
-              ? 'bg-amber-400 text-slate-950 shadow-md'
-              : 'bg-slate-900 text-slate-300 hover:text-white border border-slate-800'
-          }`}
+          onClick={onBack}
+          className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-800 px-3 py-1.5 rounded-xl font-bold active:scale-95 transition cursor-pointer"
         >
-          🌟 All Surprise Deals
+          ← Categories
         </button>
-        {TAXONOMY_REGISTRY.map((c) => (
-          <button
-            key={c.id}
-            type="button"
-            onClick={() => setActiveCategoryFilter(c.id)}
-            className={`px-2.5 py-1.5 rounded-xl text-[10px] font-bold shrink-0 transition cursor-pointer flex items-center space-x-1 ${
-              activeCategoryFilter === c.id
-                ? 'bg-amber-400 text-slate-950 shadow-md font-black'
-                : 'bg-slate-900/90 text-slate-300 hover:text-white border border-slate-800'
-            }`}
-          >
-            <span>{c.icon}</span>
-            <span>{c.name.split('(')[0]}</span>
-          </button>
-        ))}
       </div>
 
       {/* Cards List */}
-      {surpriseListings.length === 0 ? (
-        <div className="bg-slate-900/80 rounded-2xl p-8 text-center border border-slate-800 text-slate-300">
-          <span className="text-4xl block">🔍</span>
-          <p className="font-bold text-xs mt-2">
-            No matching listings found in {selectedCity}.
+      {filteredSurprise.length === 0 ? (
+        <div className="bg-white/80 rounded-2xl p-8 text-center border border-slate-200">
+          <span className="text-3xl">🎁</span>
+          <p className="text-slate-600 font-bold text-xs mt-2">
+            No active flash deals in {selectedCity} right now. Check back soon!
           </p>
         </div>
       ) : (
-        surpriseListings.map((item) => {
-          const catObj = getCategoryById(item.category);
-          return (
-            <article
-              key={item.id}
-              className="bg-white rounded-2xl overflow-hidden shadow-sm border border-slate-200 hover:shadow-md transition p-3.5 space-y-3 relative"
-            >
-              <div className="relative h-48 w-full bg-slate-100 rounded-2xl overflow-hidden shadow-inner">
-                <img
-                  src={
-                    item.image ||
-                    (item.images && item.images[0]) ||
-                    'https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=700'
-                  }
-                  alt={item.title || item.name}
-                  loading="lazy"
-                  className="w-full h-full object-cover"
-                  onError={(e) => {
-                    e.target.src = 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=700';
-                  }}
-                />
+        filteredSurprise.map((item) => (
+          <SurpriseCardItem
+            key={item.id}
+            item={item}
+            selectedCity={selectedCity}
+            onSelect={() => setSelectedDetailItem(item)}
+            getMessageTemplate={getMessageTemplate}
+          />
+        ))
+      )}
 
-                {/* Category Pill */}
-                <span className="absolute top-2.5 left-2.5 text-[10px] font-black px-2.5 py-1 rounded-lg text-white bg-slate-950/85 backdrop-blur-md border border-white/10 flex items-center space-x-1">
-                  <span>{catObj.icon}</span>
-                  <span className="uppercase">{catObj.id} • {item.subCategory}</span>
-                </span>
-
-                {/* Price Tag */}
-                <span className="absolute bottom-2.5 left-2.5 text-xs font-black px-2.5 py-1 rounded-xl text-white bg-slate-950/85 backdrop-blur-md border border-white/10">
-                  {item.price || item.rates || item.fees || item.visitingCharge || 'Best Price'}
-                </span>
-
-                <ListingDiscussionThread
-                  listingId={item.id}
-                  listingTitle={item.title || item.name}
-                  sellerName={item.sellerName || item.name || 'Verified Member'}
-                  sellerPhone={item.phone || item.whatsapp}
-                  interestCount={item.interestCount || 0}
-                  onNewNotification={onNewNotification}
-                />
-              </div>
-
-              <div className="pt-0.5">
-                <div className="flex items-start justify-between">
-                  <h3 className="font-black text-slate-900 text-sm leading-snug">
-                    {item.title || item.name}
-                  </h3>
-                  <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md shrink-0 ml-2">
-                    {item.sellerName || 'Verified'}
-                  </span>
-                </div>
-
-                {item.description && (
-                  <p className="text-[11px] text-slate-600 mt-1 line-clamp-2">
-                    {item.description}
-                  </p>
-                )}
-
-                <div className="flex items-center justify-between text-[10px] text-slate-500 font-semibold mt-2 pt-2 border-t border-slate-100">
-                  <span>📍 {item.location || selectedCity}</span>
-                  <span className="text-emerald-700 font-bold">{item.distance || '0.1 km away'}</span>
-                </div>
-              </div>
-
-              <ActionButtons
-                phone={item.phone || '9876543210'}
-                whatsapp={item.whatsapp || item.phone || '919876543210'}
-                message={`Namaste, I found "${item.title || item.name}" via Surprise Me on TownHub.`}
-              />
-            </article>
-          );
-        })
+      {/* Dedicated Detail View Modal */}
+      {selectedDetailItem && (
+        <ListingDetailModal
+          item={selectedDetailItem}
+          selectedCity={selectedCity}
+          onClose={() => setSelectedDetailItem(null)}
+          onNewNotification={onNewNotification}
+        />
       )}
     </main>
   );

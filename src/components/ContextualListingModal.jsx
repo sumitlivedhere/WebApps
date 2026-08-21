@@ -1,306 +1,378 @@
-import React, { useState } from 'react';
-import { cityZones } from '../data/cityZones';
-import { uploadMultipleListingImages, insertListingToDB } from '../services/listingService';
-import { hyperlocalStore, normalizeDBListing } from '../store/hyperlocalStore';
-import { TAXONOMY_REGISTRY, getCategoryById, sanitizeSubCategoryId } from '../data/taxonomyRegistry';
+import React, { useState, useRef } from 'react';
+import { getCategoryById, sanitizeSubCategoryId } from '../data/taxonomyRegistry';
+import { hyperlocalStore } from '../store/hyperlocalStore';
+import { uploadListingImagesToStorage, getCategoryFallback } from '../services/listingService';
 
 export default function ContextualListingModal({
   currentScreen,
-  selectedCategory,
-  selectedSubCategory,
+  selectedCategory = 'property',
+  selectedSubCategory = 'all',
   selectedCity = 'Alwar',
   onClose,
-  onNewNotification,
-  onAddListing,
 }) {
-  const getInitialTargetSector = () => {
-    if (['kaarigar-hub', 'kaarigar-feed'].includes(currentScreen)) return 'kaarigar';
-    if (['property-hub', 'listings'].includes(currentScreen)) return 'property';
-    if (['transporter-hub', 'transporter-feed'].includes(currentScreen)) return 'transporters';
-    if (['white-collar-hub', 'white-collar-feed'].includes(currentScreen)) return 'white-collar';
-    if (['restaurants-hub', 'restaurants-feed'].includes(currentScreen)) return 'restaurants';
-    if (['malls-hub', 'malls-feed'].includes(currentScreen)) return 'malls';
-    if (['education-hub', 'education-feed'].includes(currentScreen)) return 'education';
-    if (['construction-hub', 'construction-feed'].includes(currentScreen)) return 'construction';
-    if (['shaadi-hub', 'shaadi-feed'].includes(currentScreen)) return 'shaadi';
-    if (['recommerce-feed', 'recommerce-hub', 'buysell-hub'].includes(currentScreen)) return 'recommerce';
-    return selectedCategory || 'kaarigar';
-  };
+  const categoryConfig = getCategoryById(selectedCategory) || {};
+  const subCategories = Array.isArray(categoryConfig.subCategories) ? categoryConfig.subCategories : [];
 
-  const [targetSector, setTargetSector] = useState(getInitialTargetSector);
+  const defaultSub =
+    selectedSubCategory && selectedSubCategory !== 'all'
+      ? selectedSubCategory
+      : subCategories[0]?.id || 'all';
 
-  const getInitialSubCategory = () => {
-    const cat = getCategoryById(getInitialTargetSector());
-    if (selectedSubCategory && selectedSubCategory !== 'all') {
-      return sanitizeSubCategoryId(cat.id, selectedSubCategory);
-    }
-    return cat.subCategories[0].id;
-  };
+  const [subCategory, setSubCategory] = useState(defaultSub);
+  const [title, setTitle] = useState('');
+  const [price, setPrice] = useState('');
+  const [sellerName, setSellerName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [description, setDescription] = useState('');
 
-  const [targetSubCategory, setTargetSubCategory] = useState(getInitialSubCategory);
-  const activeSector = getCategoryById(targetSector);
+  // 🖼️ Multi-Image Files & Previews State
+  const fileInputRef = useRef(null);
+  const [selectedFiles, setSelectedFiles] = useState([]); // Raw File[] objects
+  const [previewUrls, setPreviewUrls] = useState([]);     // Local object URLs
 
-  const [formData, setFormData] = useState({
-    name: '',
-    phone: '',
-    whatsapp: '',
-    location: cityZones && cityZones.length > 0 ? cityZones[0].name : selectedCity,
-    feeOrPrice: '',
-    description: '',
-  });
-
-  const [rawFiles, setRawFiles] = useState([]);
-  const [imagePreviews, setImagePreviews] = useState([]);
-  const [primaryCoverIndex, setPrimaryCoverIndex] = useState(0);
+  // 📍 Location State
+  const [locationAddress, setLocationAddress] = useState('');
+  const [gpsData, setGpsData] = useState(null);
+  const [isLocating, setIsLocating] = useState(false);
+  const [locationError, setLocationError] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleImageUpload = (e) => {
-    const files = Array.from(e.target.files);
+  // 📸 Multi-File Selection Handler
+  const handleMultipleFiles = (e) => {
+    const files = Array.from(e.target.files || []);
     if (!files.length) return;
-    setRawFiles((prev) => [...prev, ...files]);
-    setImagePreviews((prev) => [...prev, ...files.map((f) => URL.createObjectURL(f))]);
-  };
 
-  const handleFinalPublish = async (e) => {
-    if (e) e.preventDefault();
-
-    if (!formData.name.trim() || !formData.phone.trim()) {
-      alert('Please fill at least Name and Phone Number.');
+    const remaining = 5 - selectedFiles.length;
+    if (remaining <= 0) {
+      alert('You can upload a maximum of 5 photos.');
       return;
     }
 
+    const newFiles = files.slice(0, remaining);
+    const newPreviews = newFiles.map((file) => URL.createObjectURL(file));
+
+    setSelectedFiles((prev) => [...prev, ...newFiles]);
+    setPreviewUrls((prev) => [...prev, ...newPreviews]);
+
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleRemoveImage = (indexToRemove) => {
+    setSelectedFiles((prev) => prev.filter((_, idx) => idx !== indexToRemove));
+    setPreviewUrls((prev) => prev.filter((_, idx) => idx !== indexToRemove));
+  };
+
+  const handleDetectGPS = () => {
+    if (!navigator.geolocation) {
+      setLocationError('Geolocation not supported.');
+      return;
+    }
+
+    setIsLocating(true);
+    setLocationError(null);
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setGpsData({
+          lat: Number(pos.coords.latitude.toFixed(6)),
+          lng: Number(pos.coords.longitude.toFixed(6)),
+          accuracy: Math.round(pos.coords.accuracy),
+        });
+        setIsLocating(false);
+      },
+      () => {
+        setIsLocating(false);
+        setLocationError('Could not fetch GPS.');
+      },
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
+    );
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!title.trim() || !sellerName.trim() || !locationAddress.trim()) return;
+
     setIsSubmitting(true);
 
-    try {
-      const targetBucket = activeSector.bucketKey;
-      const fallbackImg = 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=700';
+    const cleanSub = sanitizeSubCategoryId(selectedCategory, subCategory);
+    const fallbackImg = getCategoryFallback(selectedCategory);
 
-      const { coverUrl, allUrls } = await uploadMultipleListingImages(
-        rawFiles,
-        primaryCoverIndex,
-        targetSector
-      );
-      const finalCover = coverUrl || fallbackImg;
-      const finalAll = allUrls.length > 0 ? allUrls : [finalCover];
-
-      const dbPayload = {
-        bucketKey: targetBucket,
-        category: targetSector,
-        subCategory: targetSubCategory, // Strictly saved according to master taxonomy ID
-        title: formData.name.trim(),
-        name: formData.name.trim(),
-        price: formData.feeOrPrice ? `₹ ${formData.feeOrPrice}` : 'Contact for Price',
-        description: formData.description || '',
-        sellerName: formData.name.trim(),
-        phone: formData.phone.trim(),
-        whatsapp: formData.whatsapp.trim() || formData.phone.trim(),
-        location: formData.location || selectedCity,
-        image: finalCover,
-        images: finalAll,
-        condition: 'Good',
-      };
-
-      const savedRow = await insertListingToDB(dbPayload);
-
-      if (savedRow && savedRow.id) {
-        const confirmedNormalized = normalizeDBListing(savedRow);
-        hyperlocalStore.insertListing(targetBucket, confirmedNormalized);
-
-        if (typeof onAddListing === 'function') {
-          onAddListing(confirmedNormalized, targetBucket);
-        }
-      }
-
-      const notifPayload = {
-        tag: 'LIVE',
-        title: '🎉 Listing Live!',
-        message: `"${formData.name}" is now live under ${targetSubCategory.toUpperCase()} in ${selectedCity}.`,
-        time: 'Just now',
-      };
-      hyperlocalStore.addNotification(notifPayload);
-      if (typeof onNewNotification === 'function') {
-        onNewNotification(notifPayload);
-      }
-
-      onClose();
-    } catch (err) {
-      console.error('Publish error:', err);
-      alert(`Publishing failed: ${err.message || 'Check network connection'}`);
-    } finally {
-      setIsSubmitting(false);
+    // 1. Upload all selected files to Supabase Storage & get short clean URLs
+    let uploadedUrls = [];
+    if (selectedFiles.length > 0) {
+      uploadedUrls = await uploadListingImagesToStorage(selectedFiles);
     }
+
+    const finalImages = uploadedUrls.length > 0 ? uploadedUrls : [fallbackImg];
+
+    const newListing = {
+      id: `custom-${Date.now()}`,
+      category: selectedCategory,
+      subCategory: cleanSub,
+      title: title.trim(),
+      name: title.trim(),
+      price: price.trim() || 'Contact for Price',
+      rates: price.trim() || 'Contact for Price',
+      sellerName: sellerName.trim(),
+      phone: phone.trim() || '9876543201',
+      whatsapp: phone.trim() || '9876543201',
+      location: locationAddress.trim(),
+      city: selectedCity,
+      lat: gpsData ? gpsData.lat : null,
+      lng: gpsData ? gpsData.lng : null,
+      mapUrl: gpsData ? `https://www.google.com/maps/search/?api=1&query=${gpsData.lat},${gpsData.lng}` : null,
+      image: finalImages[0],      // Clean URL for primary cover
+      images: finalImages,         // Array of clean URLs for full carousel
+      image_urls: finalImages,
+      description: description.trim(),
+      badge: gpsData ? '📍 GPS Pinpoint Attached' : 'Verified Listing',
+      isNew: true,
+      created_at: new Date().toISOString(),
+    };
+
+    await hyperlocalStore.insertListing(categoryConfig.bucketKey || 'listings', newListing);
+    setIsSubmitting(false);
+    onClose();
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex flex-col justify-end max-w-md mx-auto animate-fade-in">
-      <div className="bg-white rounded-t-3xl max-h-[94vh] overflow-hidden flex flex-col shadow-2xl border-t border-amber-400">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/80 backdrop-blur-sm animate-fade-in p-0 sm:p-4">
+      <div className="bg-slate-900 border border-slate-800 rounded-t-3xl sm:rounded-3xl w-full max-w-md max-h-[92vh] overflow-y-auto p-4 space-y-4 shadow-2xl text-slate-100 pb-8">
         
-        {/* HEADER */}
-        <div className="px-4 pt-3.5 pb-2 bg-gradient-to-r from-slate-950 via-slate-900 to-indigo-950 text-white">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center space-x-2">
-              <span className="text-2xl">{activeSector.icon}</span>
-              <div>
-                <h2 className="text-sm font-black leading-tight text-amber-300">
-                  Apni Seva / Dukaan Jodein
-                </h2>
-                <span className="text-[10px] text-emerald-400 font-bold block">
-                  Sector: {activeSector.name.split('(')[0]}
-                </span>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={onClose}
-              className="w-7 h-7 rounded-full bg-white/20 hover:bg-white/30 text-white flex items-center justify-center font-bold text-xs cursor-pointer"
-            >
-              ✕
-            </button>
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+          <div>
+            <h3 className="text-sm font-black text-white flex items-center space-x-1.5">
+              <span>{categoryConfig.icon || '📝'}</span>
+              <span>Post New Listing / Business</span>
+            </h3>
+            <p className="text-[10px] text-slate-400">
+              Posting to <strong className="text-amber-400">{categoryConfig.name?.split('(')[0]}</strong> in {selectedCity}
+            </p>
           </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-7 h-7 bg-slate-800 hover:bg-slate-700 rounded-full text-slate-300 font-bold text-xs flex items-center justify-center cursor-pointer"
+          >
+            ✕
+          </button>
         </div>
 
-        {/* 2-LEVEL TAXONOMY SELECTORS */}
-        <div className="p-3 bg-amber-50/80 border-b border-amber-200 grid grid-cols-2 gap-2">
-          <div>
-            <label className="text-[10px] font-black uppercase tracking-wider text-amber-900 block mb-1">
-              1. Main Category
-            </label>
-            <select
-              value={targetSector}
-              onChange={(e) => {
-                const newCat = e.target.value;
-                setTargetSector(newCat);
-                const catObj = getCategoryById(newCat);
-                setTargetSubCategory(catObj.subCategories[0].id);
-              }}
-              className="w-full p-2 bg-white border border-amber-300 rounded-xl font-bold text-slate-900 text-xs focus:outline-none"
-            >
-              {TAXONOMY_REGISTRY.map((cat) => (
-                <option key={cat.id} value={cat.id}>
-                  {cat.icon} {cat.name.split('(')[0]}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="text-[10px] font-black uppercase tracking-wider text-amber-900 block mb-1">
-              2. Sub-Category *
-            </label>
-            <select
-              value={targetSubCategory}
-              onChange={(e) => setTargetSubCategory(e.target.value)}
-              className="w-full p-2 bg-white border border-amber-300 rounded-xl font-bold text-slate-900 text-xs focus:outline-none"
-            >
-              {activeSector.subCategories.map((sub) => (
-                <option key={sub.id} value={sub.id}>
-                  {sub.name}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        {/* FORM */}
-        <form onSubmit={handleFinalPublish} className="p-4 overflow-y-auto space-y-3 text-xs text-slate-800">
-          <div>
-            <label className="font-extrabold text-slate-800 block mb-1">
-              Title / Name *
-            </label>
-            <input
-              type="text"
-              required
-              placeholder="e.g. Ramesh Plumber / Bolero Maxi Truck / 2 BHK Flat"
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900 focus:outline-none focus:border-indigo-600"
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="font-bold text-slate-700 block mb-1">Calling Number *</label>
-              <input
-                type="tel"
-                required
-                placeholder="9876543210"
-                value={formData.phone}
-                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900 focus:outline-none focus:border-indigo-600"
-              />
+        <form onSubmit={handleSubmit} className="space-y-3.5 text-xs">
+          
+          {/* 📸 1. MULTI-PHOTO UPLOAD (UP TO 5 PHOTOS) */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-[10px] font-bold text-slate-400">
+                Photos / Service Proof ({previewUrls.length}/5)
+              </label>
+              <span className="text-[9px] text-slate-500 font-medium">Select multiple images</span>
             </div>
-            <div>
-              <label className="font-bold text-slate-700 block mb-1">Price / Fee (₹)</label>
-              <input
-                type="text"
-                placeholder="e.g. 200 or 25 Lakh"
-                value={formData.feeOrPrice}
-                onChange={(e) => setFormData({ ...formData, feeOrPrice: e.target.value })}
-                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900 focus:outline-none focus:border-indigo-600"
-              />
-            </div>
-          </div>
 
-          <div>
-            <label className="font-bold text-slate-700 block mb-1">Area / Colony *</label>
-            <input
-              type="text"
-              required
-              placeholder="e.g. Budh Vihar, Alwar"
-              value={formData.location}
-              onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900 focus:outline-none focus:border-indigo-600"
-            />
-          </div>
-
-          <div>
-            <label className="font-bold text-slate-700 block mb-1">Description</label>
-            <textarea
-              rows="2"
-              placeholder="Details about experience, rates, timings, condition..."
-              value={formData.description}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-semibold text-slate-900 focus:outline-none focus:border-indigo-600 resize-none"
-            ></textarea>
-          </div>
-
-          <div>
-            <label className="font-bold text-slate-700 block mb-1">Upload Photos</label>
-            <input
-              type="file"
-              accept="image/*"
-              multiple
-              onChange={handleImageUpload}
-              className="w-full text-xs text-slate-500 file:mr-2 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:bg-amber-100 file:text-amber-900 file:font-bold cursor-pointer"
-            />
-            {imagePreviews.length > 0 && (
-              <div className="grid grid-cols-3 gap-2 mt-2">
-                {imagePreviews.map((src, idx) => (
-                  <div
-                    key={idx}
-                    onClick={() => setPrimaryCoverIndex(idx)}
-                    className={`relative h-20 rounded-xl overflow-hidden cursor-pointer border-2 ${
-                      primaryCoverIndex === idx ? 'border-amber-400' : 'border-slate-200'
-                    }`}
-                  >
-                    <img src={src} alt="Upload" className="w-full h-full object-cover" />
+            {/* Thumbnail Gallery Preview Strip */}
+            {previewUrls.length > 0 && (
+              <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+                {previewUrls.map((imgSrc, idx) => (
+                  <div key={idx} className="relative h-20 rounded-xl overflow-hidden border border-slate-700 group shadow-inner bg-slate-950">
+                    <img src={imgSrc} alt={`Upload ${idx + 1}`} className="w-full h-full object-cover" />
+                    {idx === 0 && (
+                      <span className="absolute bottom-1 left-1 bg-amber-500 text-slate-950 text-[8px] font-black px-1.5 py-0.2 rounded-md">
+                        Cover
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveImage(idx)}
+                      className="absolute top-1 right-1 bg-rose-600/90 hover:bg-rose-600 text-white w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black cursor-pointer shadow-md"
+                      title="Remove photo"
+                    >
+                      ✕
+                    </button>
                   </div>
                 ))}
               </div>
             )}
+
+            {/* Upload Button Box */}
+            {previewUrls.length < 5 && (
+              <div
+                onClick={() => fileInputRef.current?.click()}
+                className="h-20 border-2 border-dashed border-slate-700 hover:border-amber-400/80 rounded-2xl flex flex-col items-center justify-center cursor-pointer bg-slate-950/60 transition group p-2 text-center"
+              >
+                <span className="text-xl group-hover:scale-110 transition">📸</span>
+                <span className="text-[10px] font-black text-slate-300 mt-0.5">
+                  + Add Photos (Select Multiple)
+                </span>
+              </div>
+            )}
+
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              className="hidden"
+              onChange={handleMultipleFiles}
+            />
           </div>
 
-          <div className="pt-2">
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="w-full py-3 bg-gradient-to-r from-indigo-600 to-indigo-800 hover:from-indigo-700 text-white rounded-2xl font-black text-sm shadow-md active:scale-95 transition cursor-pointer disabled:opacity-50"
+          {/* 2. Subcategory */}
+          <div>
+            <label className="block text-[10px] font-bold text-slate-400 mb-1">
+              Select Category Subsection
+            </label>
+            <select
+              value={subCategory}
+              onChange={(e) => setSubCategory(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white font-bold focus:outline-hidden focus:border-amber-400"
             >
-              {isSubmitting ? 'Publishing...' : '🚀 Publish Listing Live'}
-            </button>
+              {subCategories.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.icon} {s.name}
+                </option>
+              ))}
+            </select>
           </div>
-        </form>
 
+          {/* 3. Title */}
+          <div>
+            <label className="block text-[10px] font-bold text-slate-400 mb-1">
+              Business / Listing Title *
+            </label>
+            <input
+              type="text"
+              required
+              placeholder="e.g. 3 BHK Luxury Villa / Rawat Transporters"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white focus:outline-hidden focus:border-amber-400"
+            />
+          </div>
+
+          {/* 4. Price & Seller Name */}
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-[10px] font-bold text-slate-400 mb-1">
+                Price / Rent / Charges
+              </label>
+              <input
+                type="text"
+                placeholder="₹ 15,000 / Month"
+                value={price}
+                onChange={(e) => setPrice(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white focus:outline-hidden focus:border-amber-400"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-bold text-slate-400 mb-1">
+                Contact Person Name *
+              </label>
+              <input
+                type="text"
+                required
+                placeholder="e.g. Rahul Sharma"
+                value={sellerName}
+                onChange={(e) => setSellerName(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white focus:outline-hidden focus:border-amber-400"
+              />
+            </div>
+          </div>
+
+          {/* 5. Phone Number */}
+          <div>
+            <label className="block text-[10px] font-bold text-slate-400 mb-1">
+              Phone / WhatsApp Number *
+            </label>
+            <input
+              type="tel"
+              required
+              placeholder="9876543201"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white focus:outline-hidden focus:border-amber-400"
+            />
+          </div>
+
+          {/* 📍 6. Address & GPS */}
+          <div className="space-y-2.5 p-3 bg-slate-950/80 rounded-2xl border border-slate-800">
+            <div>
+              <label className="block text-[10px] font-bold text-slate-400 mb-1">
+                Colony / Area / Address * (Type your address)
+              </label>
+              <input
+                type="text"
+                required
+                placeholder="e.g. Near Bus Stand, Budh Vihar"
+                value={locationAddress}
+                onChange={(e) => setLocationAddress(e.target.value)}
+                className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-white focus:outline-hidden focus:border-cyan-400"
+              />
+            </div>
+
+            <div className="pt-2 border-t border-slate-850 flex items-center justify-between">
+              <div>
+                <div className="text-[10px] font-black text-cyan-300">
+                  Exact Map Pinpoint (Optional)
+                </div>
+                <div className="text-[8px] text-slate-400">
+                  Attaches coordinates for map features
+                </div>
+              </div>
+
+              {!gpsData ? (
+                <button
+                  type="button"
+                  onClick={handleDetectGPS}
+                  disabled={isLocating}
+                  className="px-2.5 py-1.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-400/40 text-[10px] font-black flex items-center space-x-1 transition cursor-pointer active:scale-95 shrink-0"
+                >
+                  <span>{isLocating ? '⏳' : '🎯'}</span>
+                  <span>{isLocating ? 'Locating...' : 'Pinpoint Live Location'}</span>
+                </button>
+              ) : (
+                <div className="flex items-center space-x-1.5 bg-emerald-950/40 border border-emerald-500/30 px-2.5 py-1 rounded-xl">
+                  <span className="text-[10px] font-mono text-emerald-400 font-bold">
+                    ✓ {gpsData.lat}, {gpsData.lng}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setGpsData(null)}
+                    className="text-slate-400 hover:text-rose-400 text-xs font-black ml-1 cursor-pointer"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {locationError && (
+              <p className="text-[10px] text-rose-400 font-medium mt-1">{locationError}</p>
+            )}
+          </div>
+
+          {/* 7. Detailed Description */}
+          <div>
+            <label className="block text-[10px] font-bold text-slate-400 mb-1">
+              Detailed Description / Amenities / Specs
+            </label>
+            <textarea
+              rows="3"
+              placeholder="List all offerings, specifications, dimensions, timings, terms..."
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white focus:outline-hidden focus:border-amber-400"
+            ></textarea>
+          </div>
+
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            className="w-full py-3 bg-gradient-to-r from-amber-400 to-yellow-400 hover:from-amber-300 text-slate-950 font-black text-xs rounded-2xl shadow-lg active:scale-95 transition cursor-pointer"
+          >
+            {isSubmitting ? 'Uploading Photos & Saving...' : '🚀 Publish Live to TownHub'}
+          </button>
+        </form>
       </div>
     </div>
   );

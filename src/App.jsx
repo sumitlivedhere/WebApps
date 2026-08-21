@@ -1,5 +1,7 @@
 import React, { useState, useMemo, useRef, lazy, Suspense } from 'react';
 import { useNotificationSlice, hyperlocalStore } from './store/hyperlocalStore';
+//import { useUserLocation } from './hooks/useUserLocation';
+//import LocationHeaderBar from './components/common/LocationHeaderBar';
 
 // Instant Critical Screens
 import HyperlocalHomeFeed from './HyperlocalHomeFeed';
@@ -67,6 +69,10 @@ const INITIAL_NAV_STATE = {
 };
 
 export default function App() {
+
+  
+
+
   const [history, setHistory] = useState([INITIAL_NAV_STATE]);
   const [historyIndex, setHistoryIndex] = useState(0);
   const [selectedCity, setSelectedCity] = useState('Alwar');

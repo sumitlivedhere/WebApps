@@ -1,8 +1,138 @@
-import React, { useMemo } from 'react';
-import { useStoreSlice } from '../store/hyperlocalStore';
+import React, { useMemo, useState } from 'react';
+import { useStoreSlice, useInterestSlice, hyperlocalStore } from '../store/hyperlocalStore';
 import { getCategoryById } from '../data/taxonomyRegistry';
 import ActionButtons from './common/ActionButtons';
-import ListingDiscussionThread from './common/ListingDiscussionThread';
+import ListingDetailModal from './common/ListingDetailModal';
+
+function ConstructionCardItem({ item, selectedCity, onSelect, getMessageTemplate }) {
+  const interestCount = useInterestSlice(
+    item.id,
+    Number(item.interestCount || item.interest_count || 0)
+  );
+
+  const handleStarClick = (e) => {
+    e.stopPropagation();
+    hyperlocalStore.incrementInterest(
+      item.id,
+      interestCount,
+      item.title || item.name,
+      item.sellerName || item.name || 'Contractor / Supplier'
+    );
+  };
+
+  const gallery =
+    item.images && item.images.length > 0
+      ? item.images
+      : item.image
+      ? [item.image]
+      : ['https://images.unsplash.com/photo-1541888946425-d0fbb186156f?w=700'];
+
+  const coverImg = gallery[0];
+
+  const mapUrl =
+    item.mapUrl ||
+    (item.lat && item.lng
+      ? `https://www.google.com/maps/search/?api=1&query=${item.lat},${item.lng}`
+      : null);
+
+  return (
+    <article
+      onClick={onSelect}
+      className={`bg-white rounded-2xl overflow-hidden shadow-xs border transition p-3.5 space-y-3 relative cursor-pointer hover:shadow-md active:scale-99 ${
+        item.isNew ? 'border-amber-400 ring-2 ring-amber-400/20' : 'border-slate-200'
+      }`}
+    >
+      {/* Photo Banner */}
+      <div className="relative h-48 w-full bg-slate-100 rounded-2xl overflow-hidden shadow-inner select-none">
+        <img
+          src={coverImg}
+          alt={item.title || item.name}
+          loading="lazy"
+          className="w-full h-full object-cover"
+          onError={(e) => {
+            e.target.src = 'https://images.unsplash.com/photo-1541888946425-d0fbb186156f?w=700';
+          }}
+        />
+
+        {/* Price / Rate Tag */}
+        <span className="absolute bottom-2.5 left-2.5 text-xs font-black px-2.5 py-1 rounded-xl text-white bg-slate-950/85 backdrop-blur-md border border-white/10">
+          {item.price || item.rates || 'Rate on Request'}
+        </span>
+
+        {/* Multi-Photo Indicator */}
+        {gallery.length > 1 && (
+          <span className="absolute top-2.5 left-2.5 text-[9px] font-black px-2 py-0.5 rounded-lg text-white bg-slate-950/80 backdrop-blur-xs border border-white/10">
+            📷 {gallery.length} Photos
+          </span>
+        )}
+
+        {/* Live Star Interest Badge */}
+        <button
+          type="button"
+          onClick={handleStarClick}
+          className="absolute top-2.5 right-2.5 px-2 py-1 rounded-xl bg-slate-950/80 hover:bg-slate-950 text-amber-300 border border-amber-400/30 text-[10px] font-black flex items-center space-x-1 backdrop-blur-xs transition active:scale-90 cursor-pointer shadow-md"
+        >
+          <span>⭐</span>
+          <span>{interestCount}</span>
+        </button>
+      </div>
+
+      {/* Card Details */}
+      <div className="pt-0.5 space-y-1.5">
+        <div className="flex items-start justify-between">
+          <div className="min-w-0">
+            <h3 className="font-black text-slate-900 text-sm leading-snug truncate max-w-[220px]">
+              {item.title || item.name}
+            </h3>
+            {item.sellerName && (
+              <p className="text-[10px] text-amber-700 font-bold mt-0.5 truncate">
+                🏗️ {item.sellerName}
+              </p>
+            )}
+          </div>
+          <span className="text-[10px] font-bold text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md shrink-0 ml-2">
+            {String(item.subCategory || 'CONSTRUCTION').toUpperCase()}
+          </span>
+        </div>
+
+        {item.description && (
+          <p className="text-[11px] text-slate-600 line-clamp-2 leading-relaxed">
+            {item.description}
+          </p>
+        )}
+
+        <div className="flex items-center justify-between text-[11px] pt-2 border-t border-slate-100">
+          <div className="flex items-center space-x-1 text-slate-700 font-semibold truncate max-w-[220px]">
+            <span>📍</span>
+            <span className="truncate">{item.location || selectedCity}</span>
+          </div>
+
+          {mapUrl && (
+            <a
+              href={mapUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="px-2 py-1 bg-cyan-50 hover:bg-cyan-100 text-cyan-800 border border-cyan-200 rounded-lg text-[10px] font-black flex items-center space-x-1 shrink-0 transition"
+            >
+              <span>🗺️</span>
+              <span>View Map</span>
+            </a>
+          )}
+        </div>
+      </div>
+
+      {/* 1-Click Action Buttons */}
+      <div onClick={(e) => e.stopPropagation()}>
+        <ActionButtons
+          phone={item.phone || '9876543210'}
+          whatsapp={item.whatsapp || item.phone || '919876543210'}
+          message={getMessageTemplate(item)}
+        />
+      </div>
+    </article>
+  );
+}
 
 export default function ConstructionFeed({
   listings: propListings,
@@ -13,54 +143,78 @@ export default function ConstructionFeed({
   onBack,
   onNewNotification,
 }) {
-  const storeListings = useStoreSlice('constructionListings');
+  const storeListings = useStoreSlice('constructionListings') || [];
   const allListings = propListings && propListings.length > 0 ? propListings : storeListings;
 
   const targetSub = (selectedSubCategory || selectedCategory || 'all').toLowerCase().trim();
-  const categoryConfig = getCategoryById('construction');
+  const categoryConfig = getCategoryById('construction') || { subCategories: [] };
+  const subCategories = categoryConfig.subCategories || [];
+
+  const [selectedDetailItem, setSelectedDetailItem] = useState(null);
 
   const filteredListings = useMemo(() => {
     const q = (searchQuery || '').toLowerCase().trim();
     const city = (selectedCity || '').toLowerCase().trim();
 
-    return (allListings || []).filter((item) => {
-      // 1. City Filter
-      const loc = (item.location || item.city || '').toLowerCase();
-      const matchesCity = !city || loc.includes(city) || city.includes(loc) || !loc;
-      if (!matchesCity) return false;
+    const uniqueMap = new Map();
 
-      // 2. Subcategory Filter
+    (allListings || []).forEach((item) => {
+      if (!item || !item.id) return;
+
+      // 1. City Match
+      const itemCity = (item.city || '').toLowerCase().trim();
+      const itemLoc = (item.location || '').toLowerCase().trim();
+      const matchesCity =
+        !city ||
+        itemCity === city ||
+        itemLoc.includes(city) ||
+        city.includes(itemCity);
+
+      if (!matchesCity) return;
+
+      // 2. Subcategory Match
       const itemSub = (item.subCategory || item.category || item.sub_category || '').toLowerCase().trim();
       const matchesSub = targetSub === 'all' || itemSub === targetSub;
-      if (!matchesSub) return false;
+      if (!matchesSub) return;
 
       // 3. Search Query Filter
-      if (!q) return true;
-      return (
-        item.name?.toLowerCase().includes(q) ||
-        item.title?.toLowerCase().includes(q) ||
-        item.sellerName?.toLowerCase().includes(q) ||
-        item.description?.toLowerCase().includes(q) ||
-        item.location?.toLowerCase().includes(q)
-      );
+      if (q) {
+        const matchesQuery =
+          item.name?.toLowerCase().includes(q) ||
+          item.title?.toLowerCase().includes(q) ||
+          item.sellerName?.toLowerCase().includes(q) ||
+          item.description?.toLowerCase().includes(q) ||
+          item.location?.toLowerCase().includes(q);
+        if (!matchesQuery) return;
+      }
+
+      uniqueMap.set(String(item.id), item);
     });
+
+    return Array.from(uniqueMap.values());
   }, [allListings, targetSub, selectedCity, searchQuery]);
 
   const getSubCategoryTitle = () => {
     if (targetSub === 'all') return 'All Construction & Building Services';
-    const matched = categoryConfig.subCategories.find((s) => s.id === targetSub);
+    const matched = subCategories.find((s) => s.id === targetSub);
     return matched ? matched.name : targetSub.replace('-', ' ').toUpperCase();
+  };
+
+  const getMessageTemplate = (item) => {
+    return `Namaste, I want to inquire regarding construction services/material for "${item.title || item.name}" seen on TownHub in ${selectedCity}.`;
   };
 
   return (
     <main className="p-3.5 space-y-3.5 relative z-10 animate-fade-in text-slate-800 pb-16">
       {/* Header */}
-      <div className="bg-white/85 backdrop-blur-md p-3.5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+      <div className="bg-white/85 backdrop-blur-md p-3.5 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
         <div>
           <h2 className="text-sm font-black text-slate-900 capitalize">
             {getSubCategoryTitle()}
           </h2>
-          <p className="text-[10px] text-slate-500">Live verified contractors, materials & mistris in {selectedCity}</p>
+          <p className="text-[10px] text-slate-500">
+            {filteredListings.length} verified contractors, materials & mistris in {selectedCity}
+          </p>
         </div>
         <button
           type="button"
@@ -81,63 +235,24 @@ export default function ConstructionFeed({
         </div>
       ) : (
         filteredListings.map((item) => (
-          <article
+          <ConstructionCardItem
             key={item.id}
-            className="bg-white rounded-2xl overflow-hidden shadow-sm border border-slate-200 hover:shadow-md transition p-3.5 space-y-3 relative"
-          >
-            <div className="relative h-48 w-full bg-slate-100 rounded-2xl overflow-hidden shadow-inner">
-              <img
-                src={
-                  item.image ||
-                  item.photo ||
-                  'https://images.unsplash.com/photo-1541888946425-d0fbb186156f?w=700'
-                }
-                alt={item.title || item.name}
-                loading="lazy"
-                className="w-full h-full object-cover"
-                onError={(e) => {
-                  e.target.src = 'https://images.unsplash.com/photo-1541888946425-d0fbb186156f?w=700';
-                }}
-              />
-              <span className="absolute bottom-2.5 left-2.5 text-xs font-black px-2.5 py-1 rounded-xl text-white bg-slate-950/85 backdrop-blur-md border border-white/10">
-                {item.price || item.rates || 'Rate on Request'}
-              </span>
-
-              <ListingDiscussionThread
-                listingId={item.id}
-                listingTitle={item.title || item.name}
-                sellerName={item.sellerName || item.name || 'Contractor / Supplier'}
-                sellerPhone={item.phone || item.whatsapp}
-                interestCount={item.interestCount || 0}
-                onNewNotification={onNewNotification}
-              />
-            </div>
-
-            <div className="pt-0.5">
-              <div className="flex items-start justify-between">
-                <h3 className="font-black text-slate-900 text-sm">{item.title || item.name}</h3>
-                <span className="text-[10px] font-bold text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md shrink-0 ml-2">
-                  {(item.subCategory || 'CONSTRUCTION').toUpperCase()}
-                </span>
-              </div>
-
-              {item.description && (
-                <p className="text-[11px] text-slate-600 mt-1 line-clamp-2">{item.description}</p>
-              )}
-
-              <div className="flex items-center justify-between text-[10px] text-slate-500 font-semibold mt-2 pt-2 border-t border-slate-100">
-                <span>📍 {item.location || selectedCity}</span>
-                <span className="text-emerald-700 font-bold">{item.badge || '🟢 Verified Provider'}</span>
-              </div>
-            </div>
-
-            <ActionButtons
-              phone={item.phone || '9876543210'}
-              whatsapp={item.whatsapp || item.phone || '919876543210'}
-              message={`Namaste, I want to inquire regarding construction services/material for "${item.title || item.name}" seen on TownHub.`}
-            />
-          </article>
+            item={item}
+            selectedCity={selectedCity}
+            onSelect={() => setSelectedDetailItem(item)}
+            getMessageTemplate={getMessageTemplate}
+          />
         ))
+      )}
+
+      {/* Dedicated Detail View Modal */}
+      {selectedDetailItem && (
+        <ListingDetailModal
+          item={selectedDetailItem}
+          selectedCity={selectedCity}
+          onClose={() => setSelectedDetailItem(null)}
+          onNewNotification={onNewNotification}
+        />
       )}
     </main>
   );

@@ -18,31 +18,57 @@ import { initialMedicalListings } from '../data/medicalData';
 import { initialCreatorsListings } from '../data/creatorsData';
 
 import { supabase } from '../services/supabaseClient';
-import { getCategoryFallback } from '../services/listingService';
+import {
+  getCategoryFallback,
+  createListingInDB,
+  saveCommentToDB,
+  saveReplyToDB,
+  updateInterestCountInDB,
+} from '../services/listingService';
 import { getCategoryById, sanitizeSubCategoryId } from '../data/taxonomyRegistry';
 
+const normStr = (str) => (str ? String(str).toLowerCase().trim() : '');
+
 export function normalizeDBListing(item) {
+  if (!item) return null;
   const catId = (item.category || 'property').toLowerCase().trim();
-  const categoryConfig = getCategoryById(catId);
+  const categoryConfig = getCategoryById(catId) || {};
   const rawSub =
     item.sub_category ||
     item.subCategory ||
     item.propertyType ||
     item.trade ||
+    item.tradeType ||
     item.vehicleType ||
     item.profession ||
     item.cuisine ||
-    '';
+    'all';
   const subCatId = sanitizeSubCategoryId(catId, rawSub);
   const categoryFallback = getCategoryFallback(catId);
 
+  // Robustly extract all image URLs (handles arrays or strings)
+  let allImages = [];
+  if (Array.isArray(item.image_urls) && item.image_urls.length > 0) {
+    allImages = item.image_urls.filter(Boolean);
+  } else if (Array.isArray(item.images) && item.images.length > 0) {
+    allImages = item.images.filter(Boolean);
+  } else if (typeof item.image_urls === 'string' && item.image_urls.startsWith('[')) {
+    try {
+      allImages = JSON.parse(item.image_urls);
+    } catch {}
+  }
+
   const coverImage =
     item.image_url ||
-    (item.image_urls && item.image_urls.length > 0 ? item.image_urls[0] : null) ||
+    (allImages.length > 0 ? allImages[0] : null) ||
     item.image ||
     item.photo ||
     item.avatar ||
     categoryFallback;
+
+  if (allImages.length === 0 && coverImage) {
+    allImages = [coverImage];
+  }
 
   const priceVal =
     item.price ||
@@ -53,24 +79,38 @@ export function normalizeDBListing(item) {
     item.consultationFee ||
     item.priceForTwo ||
     'Contact for Price';
+
   const nameVal = item.title || item.name || 'Untitled Listing';
   const rawLocation = item.location_name || item.location || 'Alwar';
+  
+  const resolvedCity =
+    item.city ||
+    (rawLocation.toLowerCase().includes('jaipur') ? 'Jaipur' : 'Alwar');
+
   const personOrBiz =
     item.seller_name ||
     item.sellerName ||
     item.driverName ||
     item.trainerName ||
     item.providerName ||
+    item.doctorName ||
+    item.agencyName ||
     item.name ||
     'Verified Member';
 
+  const targetBucket =
+    item.bucket_key ||
+    item.bucketKey ||
+    categoryConfig.bucketKey ||
+    'listings';
+
   return {
-    id: item.id,
+    id: String(item.id || Date.now() + Math.random()),
     title: nameVal,
     name: nameVal,
     category: catId,
     subCategory: subCatId,
-    bucketKey: item.bucket_key || categoryConfig.bucketKey || 'listings',
+    bucketKey: targetBucket,
     trade: subCatId,
     profession: subCatId,
     vehicleType: subCatId,
@@ -94,17 +134,21 @@ export function normalizeDBListing(item) {
     doctorName: personOrBiz,
     phone: item.phone || '9876543210',
     whatsapp: item.whatsapp || item.phone || '9876543210',
-    city: rawLocation.toLowerCase().includes('jaipur') ? 'Jaipur' : 'Alwar',
+    city: resolvedCity,
     location: rawLocation,
     landmark: item.landmark || rawLocation || 'Main Road',
     distance: item.distance || '0.1 km away',
+    lat: item.lat !== undefined && item.lat !== null ? Number(item.lat) : null,
+    lng: item.lng !== undefined && item.lng !== null ? Number(item.lng) : null,
+    mapUrl: item.mapUrl || (item.lat && item.lng ? `https://www.google.com/maps/search/?api=1&query=${item.lat},${item.lng}` : null),
     image: coverImage,
-    images: item.image_urls && item.image_urls.length > 0 ? item.image_urls : [coverImage],
+    images: allImages.length > 0 ? allImages : [coverImage],
+    image_urls: allImages.length > 0 ? allImages : [coverImage],
     photo: coverImage,
     avatar: coverImage,
     description: item.description || '',
     condition: item.condition || 'Good',
-    interestCount: item.interest_count || item.interestCount || 0,
+    interestCount: Number(item.interest_count !== undefined ? item.interest_count : (item.interestCount || 0)),
     rating: item.rating || 5.0,
     verified: item.verified !== undefined ? item.verified : true,
     badge: item.badge || '🟢 Verified Listing',
@@ -114,9 +158,9 @@ export function normalizeDBListing(item) {
     regNumber: item.regNumber || '',
     capacity: item.capacity || '',
     isAvailableNow: true,
+    isNew: Boolean(item.isNew),
   };
 }
-
 class HyperlocalEngineStore {
   constructor() {
     this.state = {
@@ -141,118 +185,144 @@ class HyperlocalEngineStore {
 
       threads: {},
       interests: {},
-      notifications: [
-        {
-          id: 1,
-          tag: 'TOWN UPDATE',
-          title: 'Hyperlocal Network Live',
-          message: 'Welcome to your connected city economy engine.',
-          time: 'Just now',
-          read: false,
-          type: 'system',
-        },
-        {
-          id: 2,
-          tag: 'FRESH ARRIVAL',
-          title: 'New AC listed in Budh Vihar',
-          message: 'Voltas 1.5 Ton 5-Star AC available at ₹21,000.',
-          time: '5m ago',
-          read: false,
-          type: 'listing',
-        },
-      ],
+      notifications: [],
     };
     this.listeners = new Set();
   }
 
   getState(key) {
-    return this.state[key] || [];
+    const list = this.state[key] || [];
+    const seen = new Set();
+    return list.filter((item) => {
+      if (!item || !item.id || seen.has(String(item.id))) return false;
+      seen.add(String(item.id));
+      return true;
+    });
   }
 
   getAllListings() {
-    const buckets = [
-      this.state.kaarigarWorkers,
-      this.state.listings,
-      this.state.propertyListings,
-      this.state.medicalListings,
-      this.state.fitnessListings,
-      this.state.creatorsListings,
-      this.state.individualTransporters,
-      this.state.transportFirms,
-      this.state.whiteCollarListings,
-      this.state.restaurantsList,
-      this.state.mallsStores,
-      this.state.educationListings,
-      this.state.constructionListings,
-      this.state.shaadiVendors,
-      this.state.reCommerceListings,
-      this.state.marketProducts,
-      this.state.advertisingProviders,
-      this.state.communityDrives,
-    ];
-
+    const buckets = Object.values(this.state).filter(Array.isArray);
     const seenIds = new Set();
     const combined = [];
 
     buckets.forEach((bucket) => {
-      if (Array.isArray(bucket)) {
-        bucket.forEach((item) => {
-          if (item && item.id && !seenIds.has(String(item.id))) {
-            seenIds.add(String(item.id));
-            combined.push(item);
-          }
-        });
-      }
+      bucket.forEach((item) => {
+        if (item && item.id && !seenIds.has(String(item.id))) {
+          seenIds.add(String(item.id));
+          combined.push(item);
+        }
+      });
     });
 
     return combined;
   }
 
-  insertListing(bucketKey, item) {
-    const targetBucket = this.state[bucketKey] ? bucketKey : 'listings';
-    const list = this.state[targetBucket] || [];
-    const idx = list.findIndex((existing) => String(existing.id) === String(item.id));
+  insertListing(rawBucketOrCategory, item) {
+    const tempId = item.id || `custom-${Date.now()}`;
+    const norm = normalizeDBListing({ ...item, id: tempId, isNew: true });
+    if (!norm) return;
 
-    if (idx !== -1) {
-      list[idx] = { ...list[idx], ...item };
-      this.state[targetBucket] = [...list];
-    } else {
-      this.state[targetBucket] = [item, ...list];
-    }
+    const catConfig = getCategoryById(norm.category);
+    const targetBucket =
+      catConfig && catConfig.bucketKey && this.state[catConfig.bucketKey]
+        ? catConfig.bucketKey
+        : rawBucketOrCategory && this.state[rawBucketOrCategory]
+        ? rawBucketOrCategory
+        : norm.bucketKey && this.state[norm.bucketKey]
+        ? norm.bucketKey
+        : 'listings';
+
+    const list = this.state[targetBucket] || [];
+    this.state[targetBucket] = [norm, ...list];
 
     this.addNotification({
       tag: 'LISTING LIVE',
-      title: `"${item.title || item.name}" Published!`,
-      message: `Your listing is now visible to all town buyers in ${item.location || 'your area'}.`,
+      title: `"${norm.title}" Published!`,
+      message: `Your listing is live in ${norm.location}.`,
       time: 'Just now',
       type: 'listing',
-      targetId: item.id,
+      targetId: norm.id,
     });
 
     this.notify(targetBucket);
+    this.notify(norm.category);
     this.notify('all');
+
+    createListingInDB(norm)
+      .then(({ data: dbRow, error }) => {
+        if (!error && dbRow && dbRow.id) {
+          const currentList = this.state[targetBucket] || [];
+          const itemIdx = currentList.findIndex((e) => String(e.id) === String(tempId));
+          if (itemIdx !== -1) {
+            currentList[itemIdx] = { ...currentList[itemIdx], id: String(dbRow.id), isNew: false };
+            this.state[targetBucket] = [...currentList];
+            this.notify(targetBucket);
+          }
+        }
+      })
+      .catch((err) => console.warn('Supabase insert notice:', err));
   }
 
   hydrateBulk(items) {
+    if (!Array.isArray(items) || items.length === 0) return;
     const touchedBuckets = new Set();
 
     items.forEach((row) => {
       const normalized = normalizeDBListing(row);
-      const bucket = row.bucket_key || normalized.bucketKey || 'listings';
+      if (!normalized) return;
+
+      const catConfig = getCategoryById(normalized.category);
+      const bucket =
+        catConfig && catConfig.bucketKey && this.state[catConfig.bucketKey]
+          ? catConfig.bucketKey
+          : row.bucket_key || normalized.bucketKey || 'listings';
+
       const list = this.state[bucket] || [];
-      const idx = list.findIndex((existing) => String(existing.id) === String(normalized.id));
+      const idx = list.findIndex(
+        (existing) =>
+          String(existing.id) === String(normalized.id) ||
+          (existing.title === normalized.title && existing.phone === normalized.phone && String(existing.id).startsWith('custom-'))
+      );
 
       if (idx !== -1) {
         list[idx] = { ...list[idx], ...normalized };
       } else {
         list.unshift(normalized);
       }
-      this.state[bucket] = list;
+      this.state[bucket] = [...list];
       touchedBuckets.add(bucket);
+
+      // Hydrate initial interests map from DB
+      if (normalized.interestCount !== undefined) {
+        this.state.interests[String(normalized.id)] = normalized.interestCount;
+      }
     });
 
     touchedBuckets.forEach((bucketKey) => this.notify(bucketKey));
     this.notify('all');
+  }
+
+  hydrateThreads(threadsRows) {
+    if (!Array.isArray(threadsRows) || threadsRows.length === 0) return;
+    const grouped = {};
+
+    threadsRows.forEach((row) => {
+      const listingId = String(row.listing_id);
+      if (!grouped[listingId]) grouped[listingId] = [];
+
+      grouped[listingId].push({
+        id: row.id,
+        userName: row.user_name || 'Local Buyer',
+        userArea: row.user_area || 'Nearby',
+        text: row.comment_text,
+        timestamp: new Date(row.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        isPublic: row.is_public !== undefined ? row.is_public : true,
+        sellerReply: row.seller_reply ? { text: row.seller_reply, timestamp: 'Verified Response' } : null,
+      });
+    });
+
+    this.state.threads = { ...this.state.threads, ...grouped };
+    Object.keys(grouped).forEach((lid) => this.notify(`thread:${lid}`));
   }
 
   addNotification(notif) {
@@ -271,46 +341,59 @@ class HyperlocalEngineStore {
     this.notify('notifications');
   }
 
-  markNotificationRead(id) {
-    this.state.notifications = (this.state.notifications || []).map((n) =>
-      n.id === id ? { ...n, read: true } : n
-    );
-    this.notify('notifications');
-  }
-
   markAllNotificationsRead() {
     this.state.notifications = (this.state.notifications || []).map((n) => ({ ...n, read: true }));
     this.notify('notifications');
   }
 
-  clearNotifications() {
-    this.state.notifications = [];
-    this.notify('notifications');
-  }
-
   getThreadComments(listingId, fallback = []) {
-    return this.state.threads[listingId] || fallback;
+    return this.state.threads[String(listingId)] || fallback;
   }
 
   addThreadComment(listingId, comment, listingTitle = '') {
-    this.state.threads[listingId] = [comment, ...(this.state.threads[listingId] || [])];
-    this.notify(`thread:${listingId}`);
+    const strId = String(listingId);
+    const newEntry = {
+      id: comment.id || `local-${Date.now()}`,
+      userName: comment.userName || 'Local Buyer',
+      userArea: comment.userArea || 'Nearby',
+      text: comment.text,
+      timestamp: 'Just now',
+      isPublic: comment.isPublic !== undefined ? comment.isPublic : true,
+      sellerReply: null,
+    };
+
+    this.state.threads[strId] = [newEntry, ...(this.state.threads[strId] || [])];
+    this.notify(`thread:${strId}`);
 
     this.addNotification({
       tag: 'NEW COMMENT',
       title: `Inquiry on "${listingTitle || 'Listing'}"`,
-      message: `${comment.userName || 'A buyer'} asked: "${comment.text}"`,
+      message: `${newEntry.userName} asked: "${newEntry.text}"`,
       time: 'Just now',
       type: 'comment',
       targetId: listingId,
     });
+
+    // Persist comment asynchronously to Supabase
+    saveCommentToDB(strId, newEntry, listingTitle).then((dbRow) => {
+      if (dbRow && dbRow.id) {
+        const list = this.state.threads[strId] || [];
+        const idx = list.findIndex((c) => c.id === newEntry.id);
+        if (idx !== -1) {
+          list[idx].id = dbRow.id;
+          this.state.threads[strId] = [...list];
+          this.notify(`thread:${strId}`);
+        }
+      }
+    });
   }
 
   addSellerReply(listingId, commentId, replyObj, listingTitle = '') {
-    this.state.threads[listingId] = (this.state.threads[listingId] || []).map((c) =>
+    const strId = String(listingId);
+    this.state.threads[strId] = (this.state.threads[strId] || []).map((c) =>
       c.id === commentId ? { ...c, sellerReply: replyObj } : c
     );
-    this.notify(`thread:${listingId}`);
+    this.notify(`thread:${strId}`);
 
     this.addNotification({
       tag: 'SELLER REPLIED',
@@ -320,16 +403,21 @@ class HyperlocalEngineStore {
       type: 'reply',
       targetId: listingId,
     });
+
+    // Persist reply asynchronously to Supabase
+    saveReplyToDB(commentId, replyObj.text);
   }
 
   getInterestCount(listingId, defaultCount = 0) {
-    return this.state.interests[listingId] !== undefined ? this.state.interests[listingId] : defaultCount;
+    const strId = String(listingId);
+    return this.state.interests[strId] !== undefined ? this.state.interests[strId] : defaultCount;
   }
 
   incrementInterest(listingId, defaultCount = 0, listingTitle = '', sellerName = '') {
+    const strId = String(listingId);
     const count = this.getInterestCount(listingId, defaultCount) + 1;
-    this.state.interests[listingId] = count;
-    this.notify(`interest:${listingId}`);
+    this.state.interests[strId] = count;
+    this.notify(`interest:${strId}`);
 
     this.addNotification({
       tag: 'INTEREST REGISTERED',
@@ -339,6 +427,9 @@ class HyperlocalEngineStore {
       type: 'interest',
       targetId: listingId,
     });
+
+    // Persist interest count to Supabase listings table
+    updateInterestCountInDB(listingId, count);
 
     return count;
   }
@@ -355,25 +446,92 @@ class HyperlocalEngineStore {
 
 export const hyperlocalStore = new HyperlocalEngineStore();
 
+/**
+ * Hydrates listings, interest counts, and discussion threads from Supabase on startup
+ */
 export async function hydrateFromDB() {
+  if (!supabase) return;
   try {
-    const { data, error } = await supabase
+    // 1. Fetch Active Listings & Interests
+    const { data: listingsData, error: listingsError } = await supabase
       .from('listings')
       .select('*')
       .eq('is_active', true)
       .order('created_at', { ascending: false });
 
-    if (error) {
-      console.warn('DB Hydration notice:', error.message);
-      return;
+    if (!listingsError && listingsData && listingsData.length > 0) {
+      hyperlocalStore.hydrateBulk(listingsData);
     }
 
-    if (data && data.length > 0) {
-      hyperlocalStore.hydrateBulk(data);
+    // 2. Fetch Active Comments & Threads
+    const { data: threadsData, error: threadsError } = await supabase
+      .from('listing_threads')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (!threadsError && threadsData && threadsData.length > 0) {
+      hyperlocalStore.hydrateThreads(threadsData);
     }
   } catch (err) {
     console.error('Hydration error:', err);
   }
+}
+
+let realtimeChannel = null;
+
+export function initRealtimeSubscriptions() {
+  if (realtimeChannel || !supabase) return;
+
+  realtimeChannel = supabase
+    .channel('hyperlocal-realtime-sync')
+    .on(
+      'postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'listings' },
+      (payload) => {
+        if (payload.new) {
+          hyperlocalStore.hydrateBulk([payload.new]);
+        }
+      }
+    )
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'listing_threads' },
+      (payload) => {
+        const row = payload.new;
+        if (!row) return;
+
+        if (payload.eventType === 'INSERT') {
+          const strId = String(row.listing_id);
+          const currentThreads = hyperlocalStore.state.threads[strId] || [];
+          const exists = currentThreads.some((c) => String(c.id) === String(row.id));
+
+          if (!exists) {
+            hyperlocalStore.state.threads[strId] = [
+              {
+                id: row.id,
+                userName: row.user_name || 'Local Buyer',
+                userArea: row.user_area || 'Nearby',
+                text: row.comment_text,
+                timestamp: 'Just now',
+                isPublic: row.is_public !== undefined ? row.is_public : true,
+                sellerReply: row.seller_reply ? { text: row.seller_reply, timestamp: 'Verified Response' } : null,
+              },
+              ...currentThreads,
+            ];
+            hyperlocalStore.notify(`thread:${strId}`);
+          }
+        } else if (payload.eventType === 'UPDATE' && row.seller_reply) {
+          const strId = String(row.listing_id);
+          hyperlocalStore.state.threads[strId] = (hyperlocalStore.state.threads[strId] || []).map((c) =>
+            String(c.id) === String(row.id)
+              ? { ...c, sellerReply: { text: row.seller_reply, timestamp: 'Just now' } }
+              : c
+          );
+          hyperlocalStore.notify(`thread:${strId}`);
+        }
+      }
+    )
+    .subscribe();
 }
 
 export function useStoreSlice(bucketKey) {
@@ -381,8 +539,8 @@ export function useStoreSlice(bucketKey) {
 
   useEffect(() => {
     return hyperlocalStore.subscribe((newState, changedKey) => {
-      if (!changedKey || changedKey === bucketKey) {
-        setData([...(newState[bucketKey] || [])]);
+      if (!changedKey || changedKey === bucketKey || changedKey === 'all') {
+        setData([...hyperlocalStore.getState(bucketKey)]);
       }
     });
   }, [bucketKey]);
@@ -394,8 +552,10 @@ export function useAllListingsSlice() {
   const [allListings, setAllListings] = useState(() => hyperlocalStore.getAllListings());
 
   useEffect(() => {
-    return hyperlocalStore.subscribe(() => {
-      setAllListings([...hyperlocalStore.getAllListings()]);
+    return hyperlocalStore.subscribe((_, changedKey) => {
+      if (!changedKey || changedKey === 'all') {
+        setAllListings([...hyperlocalStore.getAllListings()]);
+      }
     });
   }, []);
 
@@ -408,7 +568,7 @@ export function useThreadSlice(listingId, defaultComments = []) {
   );
 
   useEffect(() => {
-    return hyperlocalStore.subscribe((newState, changedKey) => {
+    return hyperlocalStore.subscribe((_, changedKey) => {
       if (!changedKey || changedKey === `thread:${listingId}`) {
         setComments([...hyperlocalStore.getThreadComments(listingId, defaultComments)]);
       }
@@ -424,7 +584,7 @@ export function useInterestSlice(listingId, defaultCount = 0) {
   );
 
   useEffect(() => {
-    return hyperlocalStore.subscribe((newState, changedKey) => {
+    return hyperlocalStore.subscribe((_, changedKey) => {
       if (!changedKey || changedKey === `interest:${listingId}`) {
         setCount(hyperlocalStore.getInterestCount(listingId, defaultCount));
       }
@@ -438,65 +598,12 @@ export function useNotificationSlice() {
   const [notifs, setNotifs] = useState(() => hyperlocalStore.getState('notifications'));
 
   useEffect(() => {
-    return hyperlocalStore.subscribe((newState, changedKey) => {
+    return hyperlocalStore.subscribe((_, changedKey) => {
       if (!changedKey || changedKey === 'notifications') {
-        setNotifs([...(newState.notifications || [])]);
+        setNotifs([...hyperlocalStore.getState('notifications')]);
       }
     });
   }, []);
 
   return notifs;
-}
-
-let realtimeChannel = null;
-
-export function initRealtimeSubscriptions() {
-  if (realtimeChannel) return;
-
-  realtimeChannel = supabase
-    .channel('hyperlocal-realtime-sync')
-    .on(
-      'postgres_changes',
-      { event: 'INSERT', schema: 'public', table: 'listings' },
-      (payload) => {
-        const item = payload.new;
-        const normalized = normalizeDBListing(item);
-        const catConfig = getCategoryById(item.category);
-        hyperlocalStore.insertListing(item.bucket_key || catConfig.bucketKey || 'listings', normalized);
-      }
-    )
-    .on(
-      'postgres_changes',
-      { event: '*', schema: 'public', table: 'listing_threads' },
-      (payload) => {
-        const row = payload.new;
-        if (payload.eventType === 'INSERT') {
-          hyperlocalStore.addThreadComment(
-            row.listing_id,
-            {
-              id: row.id,
-              userName: row.user_name,
-              userArea: row.user_area,
-              text: row.comment_text,
-              timestamp: 'Just now',
-              isPublic: row.is_public,
-              sellerReply: null,
-            },
-            row.listing_title || 'Listing'
-          );
-        } else if (payload.eventType === 'UPDATE' && row.seller_reply) {
-          hyperlocalStore.addSellerReply(
-            row.listing_id,
-            row.id,
-            {
-              text: row.seller_reply,
-              timestamp: 'Just now',
-              sellerName: 'Author Reply',
-            },
-            row.listing_title || 'Listing'
-          );
-        }
-      }
-    )
-    .subscribe();
 }
