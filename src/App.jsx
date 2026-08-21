@@ -7,6 +7,7 @@ import HyperlocalHomeFeed from './HyperlocalHomeFeed';
 import TownHubView from './categories/TownHubView';
 import NotificationCenter from './components/NotificationCenter';
 import ContextualListingModal from './components/ContextualListingModal';
+import ListingDetailModal from './components/common/ListingDetailModal';
 
 // Code-Split Lazy Loaded Hubs
 const SurpriseFeed = lazy(() => import('./components/SurpriseFeed'));
@@ -78,6 +79,7 @@ export default function App() {
 
   const [isListingModalOpen, setIsListingModalOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [selectedDetailItem, setSelectedDetailItem] = useState(null);
 
   // Swipe Gesture Tracking Refs
   const touchStartX = useRef(0);
@@ -159,14 +161,14 @@ export default function App() {
 
   // 🌟 TOUCH SWIPE GESTURE HANDLERS
   const handleTouchStart = (e) => {
-    if (isListingModalOpen || isNotificationsOpen) return;
+    if (isListingModalOpen || isNotificationsOpen || selectedDetailItem) return;
     touchStartX.current = e.changedTouches[0].clientX;
     touchStartY.current = e.changedTouches[0].clientY;
     touchStartTime.current = Date.now();
   };
 
   const handleTouchEnd = (e) => {
-    if (isListingModalOpen || isNotificationsOpen) return;
+    if (isListingModalOpen || isNotificationsOpen || selectedDetailItem) return;
 
     const target = e.target;
     if (target.closest('.overflow-x-auto, input, textarea, select')) return;
@@ -192,6 +194,7 @@ export default function App() {
         screen: 'surprise-feed',
         category: 'surprise',
         subCategory: 'all',
+        searchQuery: '',
       });
       return;
     }
@@ -223,6 +226,7 @@ export default function App() {
       screen: hubMap[catId] || 'town-hub',
       category: catId,
       subCategory: sub,
+      searchQuery: '',
     });
   };
 
@@ -254,6 +258,7 @@ export default function App() {
       screen: feedMap[catId] || 'listings',
       category: catId,
       subCategory: subId,
+      searchQuery: '',
     });
   };
 
@@ -298,7 +303,7 @@ export default function App() {
 
         {/* Center: Brand Header */}
         <div
-          onClick={() => navigateTo({ screen: 'home' })}
+          onClick={() => navigateTo({ screen: 'home', searchQuery: '' })}
           className="flex items-center space-x-1.5 cursor-pointer active:scale-95 transition mx-1"
         >
           <span className="text-lg">🏛️</span>
@@ -359,6 +364,8 @@ export default function App() {
             isLocating={isLocating}
             onRefreshLocation={detectLocation}
             onSelectCategory={handleOpenCategory}
+            onSelectIntent={(category, subCategory) => handleOpenFeed(category, subCategory)}
+            onSelectItem={(item) => setSelectedDetailItem(item)}
             searchQuery={searchQuery}
             onSearchChange={(q) => navigateTo({ searchQuery: q })}
           />
@@ -744,7 +751,7 @@ export default function App() {
       <footer className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-slate-950/95 backdrop-blur-md border-t border-slate-800 px-6 py-2 z-30 flex items-center justify-around">
         <button
           type="button"
-          onClick={() => navigateTo({ screen: 'home' })}
+          onClick={() => navigateTo({ screen: 'home', searchQuery: '' })}
           className={`flex flex-col items-center cursor-pointer transition ${
             currentScreen === 'home' ? 'text-amber-400' : 'text-slate-400 hover:text-slate-200'
           }`}
@@ -763,7 +770,7 @@ export default function App() {
 
         <button
           type="button"
-          onClick={() => navigateTo({ screen: 'provider-dashboard' })}
+          onClick={() => navigateTo({ screen: 'provider-dashboard', searchQuery: '' })}
           className={`flex flex-col items-center cursor-pointer transition ${
             currentScreen === 'provider-dashboard' ? 'text-amber-400' : 'text-slate-400 hover:text-slate-200'
           }`}
@@ -790,6 +797,16 @@ export default function App() {
           onClose={() => setIsNotificationsOpen(false)}
           onMarkAllRead={() => hyperlocalStore.markAllNotificationsRead()}
           onSelectNotification={handleSelectNotification}
+        />
+      )}
+
+      {/* Global Listing Detail Modal */}
+      {selectedDetailItem && (
+        <ListingDetailModal
+          item={selectedDetailItem}
+          selectedCity={selectedCity}
+          onClose={() => setSelectedDetailItem(null)}
+          onNewNotification={handleNewNotification}
         />
       )}
     </div>

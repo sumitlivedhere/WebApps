@@ -1,19 +1,24 @@
 import React from 'react';
 import TownHubView from './categories/TownHubView';
+import SearchOverlay from './components/common/SearchOverlay';
+import { hyperlocalStore } from './store/hyperlocalStore';
 
 export default function HyperlocalHomeFeed({
   userLocation,
   isLocating,
   onRefreshLocation,
   onSelectCategory,
+  onSelectIntent,
+  onSelectItem,
   searchQuery = '',
   onSearchChange,
 }) {
   const currentCity = userLocation?.city || 'Alwar';
   const displayLocality = userLocation?.display || `${userLocation?.locality || 'Nearby'}, ${currentCity}`;
+  const allListings = hyperlocalStore.getAllListings();
 
   return (
-    <div className="p-3.5 space-y-4 animate-fade-in text-slate-800">
+    <div className="p-3.5 space-y-4 animate-fade-in text-slate-800 relative">
       <style>{`
         @keyframes subtleWiggle {
           0%, 100% { transform: rotate(0deg) scale(1); }
@@ -84,6 +89,27 @@ export default function HyperlocalHomeFeed({
         </div>
       </div>
 
+      {/* 🌟 Real-Time In-Memory Search Overlay */}
+      {searchQuery.trim().length > 0 && (
+        <SearchOverlay
+          query={searchQuery}
+          allListings={allListings}
+          selectedCity={currentCity}
+          onClose={() => onSearchChange('')}
+          onSelectIntent={(category, subCategory) => {
+            onSearchChange('');
+            if (onSelectIntent) {
+              onSelectIntent(category, subCategory);
+            } else {
+              onSelectCategory(category, subCategory);
+            }
+          }}
+          onSelectItem={(item) => {
+            if (onSelectItem) onSelectItem(item);
+          }}
+        />
+      )}
+
       {/* 2. 🌟 PROMINENT WIGGLING "SURPRISE ME" CATEGORY */}
       <div className="relative animate-subtle-wiggle">
         <div className="absolute -inset-[2px] rounded-3xl overflow-hidden pointer-events-none">
@@ -123,7 +149,7 @@ export default function HyperlocalHomeFeed({
         </button>
       </div>
 
-      {/* 3. DIRECTORY */}
+      {/* 3. 17 TOP-LEVEL CATEGORIES DIRECTORY */}
       <TownHubView
         selectedCity={currentCity}
         onSelectCategory={onSelectCategory}
