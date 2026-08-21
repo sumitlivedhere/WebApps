@@ -1,10 +1,10 @@
 import React, { useMemo, useState } from 'react';
 import { useStoreSlice, useInterestSlice, hyperlocalStore } from '../store/hyperlocalStore';
-import { getCategoryById } from '../data/taxonomyRegistry';
+import { getCategoryById, sanitizeSubCategoryId } from '../data/taxonomyRegistry';
 import ActionButtons from './common/ActionButtons';
 import ListingDetailModal from './common/ListingDetailModal';
 
-function TransporterCardItem({ item, selectedCity, onSelect, getMessageTemplate }) {
+function TransporterCardItem({ item, selectedCity, onSelect }) {
   const interestCount = useInterestSlice(
     item.id,
     Number(item.interestCount || item.interest_count || 0)
@@ -15,23 +15,13 @@ function TransporterCardItem({ item, selectedCity, onSelect, getMessageTemplate 
     hyperlocalStore.incrementInterest(
       item.id,
       interestCount,
-      item.firmName || item.title || item.name,
-      item.driverName || item.sellerName || item.firmName || 'Transporter'
+      item.title || item.name,
+      item.sellerName || item.driverName || 'Transporter'
     );
   };
 
-  const gallery =
-    item.images && item.images.length > 0
-      ? item.images
-      : item.image_urls && item.image_urls.length > 0
-      ? item.image_urls
-      : item.image
-      ? [item.image]
-      : item.photo
-      ? [item.photo]
-      : ['https://images.unsplash.com/photo-1519003722824-194d4455a60c?w=700'];
-
-  const coverImg = gallery[0];
+  const gallery = item.images && item.images.length > 0 ? item.images : [item.image];
+  const coverImg = gallery[0] || 'https://images.unsplash.com/photo-1519003722824-194d4455a60c?w=700';
 
   const mapUrl =
     item.mapUrl ||
@@ -46,11 +36,10 @@ function TransporterCardItem({ item, selectedCity, onSelect, getMessageTemplate 
         item.isNew ? 'border-amber-400 ring-2 ring-amber-400/20' : 'border-slate-200'
       }`}
     >
-      {/* Photo Banner */}
-      <div className="relative h-48 w-full bg-slate-100 rounded-2xl overflow-hidden shadow-inner select-none">
+      <div className="relative h-48 w-full bg-slate-100 rounded-2xl overflow-hidden shadow-inner">
         <img
           src={coverImg}
-          alt={item.firmName || item.title || item.name}
+          alt={item.title || item.name}
           loading="lazy"
           className="w-full h-full object-cover"
           onError={(e) => {
@@ -58,19 +47,16 @@ function TransporterCardItem({ item, selectedCity, onSelect, getMessageTemplate 
           }}
         />
 
-        {/* Rate Tag */}
         <span className="absolute bottom-2.5 left-2.5 text-xs font-black px-2.5 py-1 rounded-xl text-white bg-slate-950/85 backdrop-blur-md border border-white/10">
-          {item.rates || item.price || 'Rates on Inquiry'}
+          {item.price || item.rates || '₹ Contact for Rate'}
         </span>
 
-        {/* Multi-Photo Indicator */}
         {gallery.length > 1 && (
           <span className="absolute top-2.5 left-2.5 text-[9px] font-black px-2 py-0.5 rounded-lg text-white bg-slate-950/80 backdrop-blur-xs border border-white/10">
             📷 {gallery.length} Photos
           </span>
         )}
 
-        {/* Live Star Interest Badge */}
         <button
           type="button"
           onClick={handleStarClick}
@@ -81,16 +67,13 @@ function TransporterCardItem({ item, selectedCity, onSelect, getMessageTemplate 
         </button>
       </div>
 
-      {/* Card Details */}
       <div className="pt-0.5 space-y-1.5">
         <div className="flex items-start justify-between">
-          <div className="min-w-0">
-            <h3 className="font-black text-slate-900 text-sm leading-snug truncate max-w-[220px]">
-              {item.firmName || item.title || item.name}
-            </h3>
+          <div>
+            <h3 className="font-black text-slate-900 text-sm">{item.title || item.name}</h3>
             {(item.driverName || item.sellerName) && (
-              <p className="text-[10px] text-amber-700 font-bold mt-0.5 truncate">
-                🚛 Driver: {item.driverName || item.sellerName}
+              <p className="text-[10px] text-blue-700 font-bold">
+                Driver/Owner: {item.driverName || item.sellerName}
               </p>
             )}
           </div>
@@ -120,18 +103,17 @@ function TransporterCardItem({ item, selectedCity, onSelect, getMessageTemplate 
               className="px-2 py-1 bg-cyan-50 hover:bg-cyan-100 text-cyan-800 border border-cyan-200 rounded-lg text-[10px] font-black flex items-center space-x-1 shrink-0 transition"
             >
               <span>🗺️</span>
-              <span>View Stand</span>
+              <span>View Map</span>
             </a>
           )}
         </div>
       </div>
 
-      {/* 1-Click Action Buttons */}
       <div onClick={(e) => e.stopPropagation()}>
         <ActionButtons
-          phone={item.phone || '9876543210'}
+          phone={item.phone || '9876543201'}
           whatsapp={item.whatsapp || item.phone || '919876543210'}
-          message={getMessageTemplate(item)}
+          message={`Namaste ${item.sellerName || item.driverName || ''}, I found your vehicle/transport listing "${item.title || ''}" on TownHub (${item.location || selectedCity}). I need transport service. Are you available?`}
         />
       </div>
     </article>
@@ -139,84 +121,89 @@ function TransporterCardItem({ item, selectedCity, onSelect, getMessageTemplate 
 }
 
 export default function TransporterFeed({
-  transporters: propTransporters,
-  selectedSubCategory,
-  selectedCategory,
+  selectedSubCategory = 'all',
   selectedCity = 'Alwar',
   searchQuery = '',
   onBack,
   onNewNotification,
 }) {
-  const storeTransporters = useStoreSlice('transportFirms') || [];
-  const allTransporters = propTransporters && propTransporters.length > 0 ? propTransporters : storeTransporters;
+  const transportFirms = useStoreSlice('transportFirms') || [];
+  const individualTransporters = useStoreSlice('individualTransporters') || [];
 
-  const targetSub = (selectedSubCategory || selectedCategory || 'all').toLowerCase().trim();
-  const categoryConfig = getCategoryById('transport') || { subCategories: [] };
+  const categoryConfig = getCategoryById('transporters') || { subCategories: [] };
   const subCategories = categoryConfig.subCategories || [];
 
   const [selectedDetailItem, setSelectedDetailItem] = useState(null);
 
-  const filteredTransporters = useMemo(() => {
+  const filteredListings = useMemo(() => {
     const q = (searchQuery || '').toLowerCase().trim();
-    const city = (selectedCity || '').toLowerCase().trim();
+    const targetCity = (selectedCity || 'Alwar').toLowerCase().trim();
+    const sub = (selectedSubCategory || 'all').toLowerCase().trim();
+    const targetSub = sanitizeSubCategoryId('transporters', sub);
 
     const uniqueMap = new Map();
+    const allTransportItems = [...transportFirms, ...individualTransporters];
 
-    (allTransporters || []).forEach((item) => {
+    allTransportItems.forEach((item) => {
       if (!item || !item.id) return;
 
       const itemCity = (item.city || '').toLowerCase().trim();
       const itemLoc = (item.location || '').toLowerCase().trim();
       const matchesCity =
-        !city ||
-        itemCity === city ||
-        itemLoc.includes(city) ||
-        city.includes(itemCity);
+        !targetCity ||
+        itemCity === targetCity ||
+        itemLoc.includes(targetCity) ||
+        targetCity.includes(itemCity);
 
-      if (!matchesCity) return;
+      if (!matchesCity) return false;
 
-      const itemSub = (item.subCategory || item.vehicleType || item.sub_category || '').toLowerCase().trim();
-      const matchesSub = targetSub === 'all' || itemSub === targetSub;
-      if (!matchesSub) return;
+      if (targetSub !== 'all' && targetSub !== 'transporters') {
+        const rawSub = String(item.subCategory || item.vehicleType || item.trade || '').toLowerCase().trim();
+        const sanitizedItemSub = sanitizeSubCategoryId('transporters', rawSub);
+
+        const matchesSub =
+          sanitizedItemSub === targetSub ||
+          rawSub === targetSub ||
+          rawSub.includes(targetSub) ||
+          targetSub.includes(rawSub);
+
+        if (!matchesSub) return false;
+      }
 
       if (q) {
         const matchesQuery =
-          item.firmName?.toLowerCase().includes(q) ||
           item.title?.toLowerCase().includes(q) ||
           item.name?.toLowerCase().includes(q) ||
-          item.driverName?.toLowerCase().includes(q) ||
           item.description?.toLowerCase().includes(q) ||
+          item.vehicleType?.toLowerCase().includes(q) ||
           item.location?.toLowerCase().includes(q);
-        if (!matchesQuery) return;
+
+        if (!matchesQuery) return false;
       }
 
       uniqueMap.set(String(item.id), item);
     });
 
     return Array.from(uniqueMap.values());
-  }, [allTransporters, targetSub, selectedCity, searchQuery]);
+  }, [transportFirms, individualTransporters, selectedSubCategory, selectedCity, searchQuery]);
 
   const getSubCategoryTitle = () => {
-    if (targetSub === 'all') return 'All Commercial Vehicles & Transporters';
-    const matched = subCategories.find((s) => s.id === targetSub);
-    return matched ? matched.name : targetSub.replace('-', ' ').toUpperCase();
-  };
-
-  const getMessageTemplate = (item) => {
-    const name = item.firmName || item.driverName || item.title || 'Transporter';
-    return `Namaste ${name}, I found your commercial transport service on TownHub in ${selectedCity}. I need transport/delivery service. Are you available?`;
+    if (selectedSubCategory === 'all' || selectedSubCategory === 'transporters') {
+      return 'All Transporters, Trucks & Commercial Vehicles (ट्रांसपोर्ट व गाड़ियां)';
+    }
+    const matched = subCategories.find((s) => s.id === selectedSubCategory);
+    return matched ? matched.name : selectedSubCategory.toUpperCase();
   };
 
   return (
     <main className="p-3.5 space-y-3.5 relative z-10 animate-fade-in text-slate-800 pb-16">
-      {/* Header */}
       <div className="bg-white/85 backdrop-blur-md p-3.5 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
         <div>
           <h2 className="text-sm font-black text-slate-900 capitalize">
-            {getSubCategoryTitle()}
+            {getSubCategoryTitle().split('(')[0]}
           </h2>
           <p className="text-[10px] text-slate-500">
-            {filteredTransporters.length} live verified transport vehicles in {selectedCity}
+            {filteredListings.length} verified commercial vehicles & transport offices in {selectedCity}
           </p>
         </div>
         <button
@@ -228,27 +215,24 @@ export default function TransporterFeed({
         </button>
       </div>
 
-      {/* Cards List */}
-      {filteredTransporters.length === 0 ? (
+      {filteredListings.length === 0 ? (
         <div className="bg-white/80 rounded-2xl p-8 text-center border border-slate-200">
           <span className="text-3xl">🚛</span>
           <p className="text-slate-600 font-bold text-xs mt-2">
-            No transport vehicles found under {targetSub !== 'all' ? targetSub : 'this category'} in {selectedCity}.
+            No transport vehicles found under this subsection in {selectedCity}.
           </p>
         </div>
       ) : (
-        filteredTransporters.map((item) => (
+        filteredListings.map((item) => (
           <TransporterCardItem
             key={item.id}
             item={item}
             selectedCity={selectedCity}
             onSelect={() => setSelectedDetailItem(item)}
-            getMessageTemplate={getMessageTemplate}
           />
         ))
       )}
 
-      {/* Dedicated Detail View Modal */}
       {selectedDetailItem && (
         <ListingDetailModal
           item={selectedDetailItem}

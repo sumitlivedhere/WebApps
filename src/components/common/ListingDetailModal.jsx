@@ -21,17 +21,14 @@ export default function ListingDetailModal({
   const [sellerReplyText, setSellerReplyText] = useState('');
   const [isSellerMode, setIsSellerMode] = useState(false);
 
- // Robust Multi-Key Gallery Resolution
+  // Gallery resolution
   const gallery =
-  Array.isArray(item.images) && item.images.length > 0
-    ? item.images
-    : Array.isArray(item.image_urls) && item.image_urls.length > 0
-    ? item.image_urls
-    : item.image
-    ? [item.image]
-    : item.photo
-    ? [item.photo]
-    : ['https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=700'];
+    item.images && item.images.length > 0
+      ? item.images
+      : item.image
+      ? [item.image]
+      : ['https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=700'];
+
   const totalImages = gallery.length;
 
   const handleScroll = () => {
