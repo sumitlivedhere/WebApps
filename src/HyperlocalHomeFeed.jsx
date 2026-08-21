@@ -35,7 +35,7 @@ export default function HyperlocalHomeFeed({
               <select
                 value={selectedCity}
                 onChange={(e) => onSelectCity(e.target.value)}
-                className="bg-slate-800/90 text-white font-black text-sm px-2.5 py-1 rounded-xl border border-slate-700 focus:outline-none focus:border-amber-400 cursor-pointer"
+                className="bg-slate-800/90 text-white font-black text-sm px-2.5 py-1 rounded-xl border border-slate-700 focus:outline-hidden focus:border-amber-400 cursor-pointer"
               >
                 {AVAILABLE_CITIES.map((c) => (
                   <option key={c} value={c}>
@@ -62,14 +62,14 @@ export default function HyperlocalHomeFeed({
             placeholder="Search Plumber, 2 BHK Flat, Bolero, Doctor, Cafe..."
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
-            className="w-full pl-9 pr-8 py-2.5 bg-slate-800/80 border border-slate-700 rounded-2xl font-bold text-xs text-white placeholder-slate-400 focus:outline-none focus:border-amber-400"
+            className="w-full pl-9 pr-8 py-2.5 bg-slate-800/80 border border-slate-700 rounded-2xl font-bold text-xs text-white placeholder-slate-400 focus:outline-hidden focus:border-amber-400"
           />
           <span className="absolute left-3 top-2.5 text-xs text-slate-400">🔍</span>
           {searchQuery && (
             <button
               type="button"
               onClick={() => onSearchChange('')}
-              className="absolute right-3 top-2.5 text-xs text-slate-400 hover:text-white"
+              className="absolute right-3 top-2.5 text-xs text-slate-400 hover:text-white cursor-pointer"
             >
               ✕
             </button>
@@ -85,7 +85,7 @@ export default function HyperlocalHomeFeed({
         </div>
 
         {/* Outer Glow Halo */}
-        <div className="absolute -inset-[1px] rounded-3xl bg-amber-400/25 blur-sm pointer-events-none"></div>
+        <div className="absolute -inset-[1px] rounded-3xl bg-amber-400/25 blur-xs pointer-events-none"></div>
 
         {/* Surprise Card Trigger */}
         <button
