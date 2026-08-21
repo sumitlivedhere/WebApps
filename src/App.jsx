@@ -1,19 +1,17 @@
 import React, { useState, useMemo, useRef, lazy, Suspense } from 'react';
 import { useNotificationSlice, hyperlocalStore } from './store/hyperlocalStore';
-//import { useUserLocation } from './hooks/useUserLocation';
-//import LocationHeaderBar from './components/common/LocationHeaderBar';
+import { useUserLocation } from './hooks/useUserLocation';
 
-// Instant Critical Screens
+// Instant Critical Screens & Hubs
 import HyperlocalHomeFeed from './HyperlocalHomeFeed';
+import TownHubView from './categories/TownHubView';
 import NotificationCenter from './components/NotificationCenter';
 import ContextualListingModal from './components/ContextualListingModal';
 
-// Code-Split Lazy Loaded Hubs & Feeds
+// Code-Split Lazy Loaded Hubs
 const SurpriseFeed = lazy(() => import('./components/SurpriseFeed'));
 const ProviderDashboard = lazy(() => import('./ProviderDashboard'));
-const TownHubView = lazy(() => import('./categories/TownHubView'));
 const MedicalHub = lazy(() => import('./categories/MedicalHub'));
-const MedicalFeed = lazy(() => import('./components/MedicalFeed'));
 const PropertyHub = lazy(() => import('./categories/PropertyHub'));
 const VehicleHub = lazy(() => import('./categories/VehicleHub'));
 const ElectronicsHub = lazy(() => import('./categories/ElectronicsHub'));
@@ -34,8 +32,10 @@ const ReCommerceHub = lazy(() => import('./categories/ReCommerceHub'));
 const FitnessHub = lazy(() => import('./categories/FitnessHub'));
 const CreatorsHub = lazy(() => import('./categories/CreatorsHub'));
 
+// Code-Split Lazy Loaded Category Feeds
 const ListingsFeed = lazy(() => import('./components/ListingsFeed'));
 const PropertyFeed = lazy(() => import('./components/PropertyFeed'));
+const MedicalFeed = lazy(() => import('./components/MedicalFeed'));
 const KaarigarWorkerList = lazy(() => import('./components/KaarigarWorkerList'));
 const TransporterFeed = lazy(() => import('./components/TransporterFeed'));
 const WhiteCollarFeed = lazy(() => import('./components/WhiteCollarFeed'));
@@ -69,13 +69,12 @@ const INITIAL_NAV_STATE = {
 };
 
 export default function App() {
-
-  
-
-
   const [history, setHistory] = useState([INITIAL_NAV_STATE]);
   const [historyIndex, setHistoryIndex] = useState(0);
-  const [selectedCity, setSelectedCity] = useState('Alwar');
+
+  // 📍 GPS Locality & Town Hook
+  const { location: userLocation, isLocating, detectLocation } = useUserLocation();
+  const selectedCity = userLocation?.city || 'Alwar';
 
   const [isListingModalOpen, setIsListingModalOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
@@ -134,6 +133,30 @@ export default function App() {
     if (canGoForward) setHistoryIndex((prev) => prev + 1);
   };
 
+  const handleNewNotification = (notif) => {
+    hyperlocalStore.addNotification(notif);
+  };
+
+  // 🔔 Deep link router when tapping an alert
+  const handleSelectNotification = (notif) => {
+    setIsNotificationsOpen(false);
+
+    if (notif.targetId) {
+      const allItems = hyperlocalStore.getAllListings();
+      const matched = allItems.find((i) => String(i.id) === String(notif.targetId));
+      if (matched && matched.category) {
+        handleOpenFeed(matched.category, matched.subCategory || 'all');
+        return;
+      }
+    }
+
+    if (notif.category) {
+      handleOpenFeed(notif.category, notif.subCategory || 'all');
+    } else if (notif.screen) {
+      navigateTo({ screen: notif.screen });
+    }
+  };
+
   // 🌟 TOUCH SWIPE GESTURE HANDLERS
   const handleTouchStart = (e) => {
     if (isListingModalOpen || isNotificationsOpen) return;
@@ -145,7 +168,6 @@ export default function App() {
   const handleTouchEnd = (e) => {
     if (isListingModalOpen || isNotificationsOpen) return;
 
-    // Ignore swipe if inside horizontal scrollers or inputs
     const target = e.target;
     if (target.closest('.overflow-x-auto, input, textarea, select')) return;
 
@@ -155,7 +177,6 @@ export default function App() {
     const deltaY = touchEndY - touchStartY.current;
     const deltaTime = Date.now() - touchStartTime.current;
 
-    // Minimum distance: 60px, Horizontal dominant (X > 1.4 * Y), Duration: < 550ms
     if (deltaTime < 550 && Math.abs(deltaX) > 60 && Math.abs(deltaX) > Math.abs(deltaY) * 1.4) {
       if (deltaX > 0) {
         if (canGoBack) goBack();
@@ -205,7 +226,7 @@ export default function App() {
     });
   };
 
-  const handleOpenFeed = (catId, subId) => {
+  const handleOpenFeed = (catId, subId = 'all') => {
     const feedMap = {
       property: 'property-feed',
       vehicles: 'listings',
@@ -242,10 +263,9 @@ export default function App() {
       onTouchEnd={handleTouchEnd}
       className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between max-w-md mx-auto relative shadow-2xl overflow-x-hidden font-sans select-none pb-24 touch-pan-y"
     >
-      {/* 🌟 1. STICKY HEADER WITH STEP CONTROLS, CONDITIONAL "+ POST HERE" & NOTIFICATIONS */}
+      {/* 🌟 1. STICKY HEADER */}
       <header className="sticky top-0 z-40 bg-slate-950/90 backdrop-blur-md px-3 py-2 border-b border-slate-800 flex items-center justify-between shadow-md">
-        
-        {/* Left: Global Back & Forward Step Controller */}
+        {/* Left: Step History Controller */}
         <div className="flex items-center space-x-1.5 bg-slate-900/90 p-1 rounded-2xl border border-slate-800 shadow-inner shrink-0">
           <button
             type="button"
@@ -276,7 +296,7 @@ export default function App() {
           </button>
         </div>
 
-        {/* Center: Brand & Step Indicator */}
+        {/* Center: Brand Header */}
         <div
           onClick={() => navigateTo({ screen: 'home' })}
           className="flex items-center space-x-1.5 cursor-pointer active:scale-95 transition mx-1"
@@ -284,7 +304,7 @@ export default function App() {
           <span className="text-lg">🏛️</span>
           <div>
             <h1 className="text-[11px] font-black tracking-wider text-amber-400 uppercase leading-none">
-              TownHub • {selectedCity}
+              TownHub • {userLocation?.locality || selectedCity}
             </h1>
             <p className="text-[8px] text-slate-400 font-semibold leading-none mt-0.5">
               Step {historyIndex + 1} of {history.length}
@@ -335,12 +355,12 @@ export default function App() {
       <main className="flex-1">
         {currentScreen === 'home' && (
           <HyperlocalHomeFeed
-            selectedCity={selectedCity}
-            onSelectCity={setSelectedCity}
+            userLocation={userLocation}
+            isLocating={isLocating}
+            onRefreshLocation={detectLocation}
             onSelectCategory={handleOpenCategory}
             searchQuery={searchQuery}
             onSearchChange={(q) => navigateTo({ searchQuery: q })}
-            onOpenPostModal={() => setIsListingModalOpen(true)}
           />
         )}
 
@@ -350,29 +370,13 @@ export default function App() {
               selectedCity={selectedCity}
               searchQuery={searchQuery}
               onBack={goBack}
+              onNewNotification={handleNewNotification}
             />
           )}
 
           {currentScreen === 'provider-dashboard' && (
             <ProviderDashboard onBack={goBack} />
           )}
-
-          {currentScreen === 'medical-hub' && (
-          <MedicalHub
-             selectedCity={selectedCity}
-             onSelectSubCategory={(sub) => handleOpenFeed('medical', sub)}
-             onBack={goBack}
-         />
-           )}
-
-          {currentScreen === 'medical-feed' && (
-           <MedicalFeed
-             selectedSubCategory={selectedSubCategory}
-             selectedCity={selectedCity}
-             searchQuery={searchQuery}
-             onBack={goBack}
-        />
-           )}
 
           {currentScreen === 'town-hub' && (
             <TownHubView
@@ -382,6 +386,15 @@ export default function App() {
               onBack={goBack}
             />
           )}
+
+          {currentScreen === 'medical-hub' && (
+            <MedicalHub
+              selectedCity={selectedCity}
+              onSelectSubCategory={(sub) => handleOpenFeed('medical', sub)}
+              onBack={goBack}
+            />
+          )}
+
           {currentScreen === 'property-hub' && (
             <PropertyHub
               selectedCity={selectedCity}
@@ -389,6 +402,7 @@ export default function App() {
               onBack={goBack}
             />
           )}
+
           {currentScreen === 'vehicle-hub' && (
             <VehicleHub
               selectedCity={selectedCity}
@@ -396,6 +410,7 @@ export default function App() {
               onBack={goBack}
             />
           )}
+
           {currentScreen === 'electronics-hub' && (
             <ElectronicsHub
               selectedCity={selectedCity}
@@ -403,6 +418,7 @@ export default function App() {
               onBack={goBack}
             />
           )}
+
           {currentScreen === 'fashion-hub' && (
             <FashionHub
               selectedCity={selectedCity}
@@ -410,6 +426,7 @@ export default function App() {
               onBack={goBack}
             />
           )}
+
           {currentScreen === 'furniture-hub' && (
             <FurnitureHub
               selectedCity={selectedCity}
@@ -417,6 +434,7 @@ export default function App() {
               onBack={goBack}
             />
           )}
+
           {currentScreen === 'kaarigar-hub' && (
             <KaarigarHub
               selectedCity={selectedCity}
@@ -424,6 +442,7 @@ export default function App() {
               onBack={goBack}
             />
           )}
+
           {currentScreen === 'transporter-hub' && (
             <TransporterHub
               selectedCity={selectedCity}
@@ -431,6 +450,7 @@ export default function App() {
               onBack={goBack}
             />
           )}
+
           {currentScreen === 'white-collar-hub' && (
             <WhiteCollarHub
               selectedCity={selectedCity}
@@ -438,6 +458,7 @@ export default function App() {
               onBack={goBack}
             />
           )}
+
           {currentScreen === 'education-hub' && (
             <EducationHub
               selectedCity={selectedCity}
@@ -445,6 +466,7 @@ export default function App() {
               onBack={goBack}
             />
           )}
+
           {currentScreen === 'restaurants-hub' && (
             <RestaurantsHub
               selectedCity={selectedCity}
@@ -452,6 +474,7 @@ export default function App() {
               onBack={goBack}
             />
           )}
+
           {currentScreen === 'malls-hub' && (
             <MallsHub
               selectedCity={selectedCity}
@@ -459,6 +482,7 @@ export default function App() {
               onBack={goBack}
             />
           )}
+
           {currentScreen === 'shaadi-hub' && (
             <ShaadiHub
               selectedCity={selectedCity}
@@ -466,6 +490,7 @@ export default function App() {
               onBack={goBack}
             />
           )}
+
           {currentScreen === 'construction-hub' && (
             <ConstructionHub
               selectedCity={selectedCity}
@@ -473,6 +498,7 @@ export default function App() {
               onBack={goBack}
             />
           )}
+
           {currentScreen === 'advertising-hub' && (
             <AdvertisingHub
               selectedCity={selectedCity}
@@ -480,6 +506,7 @@ export default function App() {
               onBack={goBack}
             />
           )}
+
           {currentScreen === 'community-hub' && (
             <CommunityHub
               selectedCity={selectedCity}
@@ -487,6 +514,7 @@ export default function App() {
               onBack={goBack}
             />
           )}
+
           {currentScreen === 'market-hub' && (
             <MarketHub
               selectedCity={selectedCity}
@@ -494,6 +522,7 @@ export default function App() {
               onBack={goBack}
             />
           )}
+
           {currentScreen === 'buysell-hub' && (
             <ReCommerceHub
               selectedCity={selectedCity}
@@ -501,6 +530,7 @@ export default function App() {
               onBack={goBack}
             />
           )}
+
           {currentScreen === 'fitness-hub' && (
             <FitnessHub
               selectedCity={selectedCity}
@@ -508,6 +538,7 @@ export default function App() {
               onBack={goBack}
             />
           )}
+
           {currentScreen === 'creators-hub' && (
             <CreatorsHub
               selectedCity={selectedCity}
@@ -524,6 +555,7 @@ export default function App() {
               selectedCity={selectedCity}
               searchQuery={searchQuery}
               onBack={goBack}
+              onNewNotification={handleNewNotification}
             />
           )}
           {currentScreen === 'property-feed' && (
@@ -532,6 +564,16 @@ export default function App() {
               selectedCity={selectedCity}
               searchQuery={searchQuery}
               onBack={goBack}
+              onNewNotification={handleNewNotification}
+            />
+          )}
+          {currentScreen === 'medical-feed' && (
+            <MedicalFeed
+              selectedSubCategory={selectedSubCategory}
+              selectedCity={selectedCity}
+              searchQuery={searchQuery}
+              onBack={goBack}
+              onNewNotification={handleNewNotification}
             />
           )}
           {currentScreen === 'kaarigar-feed' && (
@@ -540,6 +582,7 @@ export default function App() {
               selectedCity={selectedCity}
               searchQuery={searchQuery}
               onBack={goBack}
+              onNewNotification={handleNewNotification}
             />
           )}
           {currentScreen === 'transporter-feed' && (
@@ -548,6 +591,7 @@ export default function App() {
               selectedCity={selectedCity}
               searchQuery={searchQuery}
               onBack={goBack}
+              onNewNotification={handleNewNotification}
             />
           )}
           {currentScreen === 'white-collar-feed' && (
@@ -556,6 +600,7 @@ export default function App() {
               selectedCity={selectedCity}
               searchQuery={searchQuery}
               onBack={goBack}
+              onNewNotification={handleNewNotification}
             />
           )}
           {currentScreen === 'education-feed' && (
@@ -564,6 +609,7 @@ export default function App() {
               selectedCity={selectedCity}
               searchQuery={searchQuery}
               onBack={goBack}
+              onNewNotification={handleNewNotification}
             />
           )}
           {currentScreen === 'restaurants-feed' && (
@@ -572,6 +618,7 @@ export default function App() {
               selectedCity={selectedCity}
               searchQuery={searchQuery}
               onBack={goBack}
+              onNewNotification={handleNewNotification}
             />
           )}
           {currentScreen === 'malls-feed' && (
@@ -580,6 +627,7 @@ export default function App() {
               selectedCity={selectedCity}
               searchQuery={searchQuery}
               onBack={goBack}
+              onNewNotification={handleNewNotification}
             />
           )}
           {currentScreen === 'shaadi-feed' && (
@@ -588,6 +636,7 @@ export default function App() {
               selectedCity={selectedCity}
               searchQuery={searchQuery}
               onBack={goBack}
+              onNewNotification={handleNewNotification}
             />
           )}
           {currentScreen === 'construction-feed' && (
@@ -596,6 +645,7 @@ export default function App() {
               selectedCity={selectedCity}
               searchQuery={searchQuery}
               onBack={goBack}
+              onNewNotification={handleNewNotification}
             />
           )}
           {currentScreen === 'advertising-feed' && (
@@ -604,6 +654,7 @@ export default function App() {
               selectedCity={selectedCity}
               searchQuery={searchQuery}
               onBack={goBack}
+              onNewNotification={handleNewNotification}
             />
           )}
           {currentScreen === 'community-feed' && (
@@ -612,6 +663,7 @@ export default function App() {
               selectedCity={selectedCity}
               searchQuery={searchQuery}
               onBack={goBack}
+              onNewNotification={handleNewNotification}
             />
           )}
           {currentScreen === 'market-feed' && (
@@ -620,6 +672,7 @@ export default function App() {
               selectedCity={selectedCity}
               searchQuery={searchQuery}
               onBack={goBack}
+              onNewNotification={handleNewNotification}
             />
           )}
           {currentScreen === 'recommerce-feed' && (
@@ -628,6 +681,7 @@ export default function App() {
               selectedCity={selectedCity}
               searchQuery={searchQuery}
               onBack={goBack}
+              onNewNotification={handleNewNotification}
             />
           )}
           {currentScreen === 'fitness-feed' && (
@@ -636,6 +690,7 @@ export default function App() {
               selectedCity={selectedCity}
               searchQuery={searchQuery}
               onBack={goBack}
+              onNewNotification={handleNewNotification}
             />
           )}
           {currentScreen === 'creators-feed' && (
@@ -644,6 +699,7 @@ export default function App() {
               selectedCity={selectedCity}
               searchQuery={searchQuery}
               onBack={goBack}
+              onNewNotification={handleNewNotification}
             />
           )}
         </Suspense>
@@ -732,6 +788,8 @@ export default function App() {
         <NotificationCenter
           notifications={notifications}
           onClose={() => setIsNotificationsOpen(false)}
+          onMarkAllRead={() => hyperlocalStore.markAllNotificationsRead()}
+          onSelectNotification={handleSelectNotification}
         />
       )}
     </div>
