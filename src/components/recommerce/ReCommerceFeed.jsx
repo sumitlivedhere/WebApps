@@ -1,8 +1,8 @@
 import React, { useMemo, useState } from 'react';
-import { useStoreSlice, useInterestSlice, hyperlocalStore } from '../store/hyperlocalStore';
-import { getCategoryById } from '../data/taxonomyRegistry';
-import ActionButtons from './common/ActionButtons';
-import ListingDetailModal from './common/ListingDetailModal';
+import { useStoreSlice, useInterestSlice, hyperlocalStore } from '../../store/hyperlocalStore';
+import { getCategoryById } from '../../data/taxonomyRegistry';
+import ActionButtons from '../common/ActionButtons';
+import ListingDetailModal from '../common/ListingDetailModal';
 
 function ReCommerceCardItem({ item, selectedCity, onSelect, getMessageTemplate }) {
   const interestCount = useInterestSlice(
