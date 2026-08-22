@@ -1,5 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useThreadSlice, useInterestSlice, hyperlocalStore } from '../../store/hyperlocalStore';
+import VoiceNotePlayer from './VoiceNotePlayer';
+import {
+  getOptimizedVoiceStream,
+  createOptimizedMediaRecorder,
+  compressAudioBlob,
+} from '../../utils/audioCompressor';
 
 export default function ListingDiscussionThread({
   listingId,
@@ -15,99 +21,241 @@ export default function ListingDiscussionThread({
   const [userName, setUserName] = useState('');
   const [activeReplyId, setActiveReplyId] = useState(null);
   const [replyText, setReplyText] = useState('');
-  const [isRecording, setIsRecording] = useState(false);
   const [isSellerMode, setIsSellerMode] = useState(false);
 
-  // 🛡️ Confirmation State before final dispatch
+  // 🎙️ Buyer Audio Recording State
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordSeconds, setRecordSeconds] = useState(0);
+  const [isCompressingBuyer, setIsCompressingBuyer] = useState(false);
+
+  const buyerMediaRecorderRef = useRef(null);
+  const buyerAudioChunksRef = useRef([]);
+  const buyerTimerRef = useRef(null);
+
+  // 🎙️ Seller Audio Recording State
+  const [sellerRecordingId, setSellerRecordingId] = useState(null);
+  const [sellerRecordSeconds, setSellerRecordSeconds] = useState(0);
+  const [isCompressingSeller, setIsCompressingSeller] = useState(false);
+
+  const sellerMediaRecorderRef = useRef(null);
+  const sellerAudioChunksRef = useRef([]);
+  const sellerTimerRef = useRef(null);
+
   const [pendingConfirmQuery, setPendingConfirmQuery] = useState(null);
 
   const comments = useThreadSlice(listingId, []);
   const interestCount = useInterestSlice(listingId, initialInterestCount);
   const inputRef = useRef(null);
 
-  // 🎙️ Web Speech API (Hold or Tap to Speak)
-  const recognitionRef = useRef(null);
+  // 🎙️ 1. Buyer: Start Recording Pure Voice Note
+  const startBuyerVoiceRecording = async () => {
+    try {
+      const stream = await getOptimizedVoiceStream();
+      buyerAudioChunksRef.current = [];
 
-  useEffect(() => {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (SpeechRecognition) {
-      const rec = new SpeechRecognition();
-      rec.continuous = true;
-      rec.interimResults = true;
-      rec.lang = 'en-IN';
+      const mediaRecorder = createOptimizedMediaRecorder(stream);
+      buyerMediaRecorderRef.current = mediaRecorder;
 
-      rec.onresult = (event) => {
-        let transcript = '';
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          transcript += event.results[i][0].transcript;
-        }
-        if (transcript.trim()) {
-          setNewComment((prev) => {
-            const cleanPrev = prev ? prev.trim() + ' ' : '';
-            return cleanPrev + transcript.trim();
-          });
-        }
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) buyerAudioChunksRef.current.push(e.data);
       };
 
-      rec.onerror = () => setIsRecording(false);
-      rec.onend = () => setIsRecording(false);
-      recognitionRef.current = rec;
-    }
-  }, []);
-
-  const startVoice = () => {
-    if (!recognitionRef.current) {
-      alert('Voice input is not supported in this browser. Please type.');
-      return;
-    }
-    try {
-      recognitionRef.current.start();
+      mediaRecorder.start(100);
       setIsRecording(true);
-    } catch {}
-  };
+      setRecordSeconds(0);
 
-  const stopVoice = () => {
-    if (recognitionRef.current && isRecording) {
-      recognitionRef.current.stop();
-      setIsRecording(false);
+      buyerTimerRef.current = setInterval(() => {
+        setRecordSeconds((p) => p + 1);
+      }, 1000);
+    } catch (err) {
+      alert('Microphone permission denied. Please allow microphone access in your browser settings.');
     }
   };
+
+  // 🎙️ 2. Buyer: Stop, Compress & Send Voice Note
+  const stopAndSendBuyerVoice = () => {
+    const mediaRecorder = buyerMediaRecorderRef.current;
+    if (!mediaRecorder) return;
+
+    mediaRecorder.onstop = async () => {
+      clearInterval(buyerTimerRef.current);
+      setIsCompressingBuyer(true);
+
+      try {
+        const audioBlob = new Blob(buyerAudioChunksRef.current, {
+          type: mediaRecorder.mimeType || 'audio/webm',
+        });
+        const compressedAudio = await compressAudioBlob(audioBlob);
+        const durationStr = `0:${recordSeconds < 10 ? '0' : ''}${recordSeconds}`;
+        const sender = userName.trim() || 'Town User';
+
+        hyperlocalStore.addThreadComment(
+          listingId,
+          {
+            userName: sender,
+            type: 'audio',
+            audioUrl: compressedAudio,
+            audioDuration: durationStr,
+            text: '🎤 Voice Note Question',
+            isPublic: true,
+          },
+          listingTitle
+        );
+
+        if (onNewNotification) {
+          onNewNotification({
+            tag: 'VOICE INQUIRY',
+            title: `Voice note on "${listingTitle}"`,
+            message: `${sender} sent an audio question (${durationStr})`,
+            time: 'Just now',
+            type: 'comment',
+            targetId: listingId,
+          });
+        }
+      } catch (err) {
+        console.error('Failed to compress buyer voice note:', err);
+      } finally {
+        mediaRecorder.stream.getTracks().forEach((t) => t.stop());
+        setIsRecording(false);
+        setRecordSeconds(0);
+        setIsCompressingBuyer(false);
+      }
+    };
+
+    mediaRecorder.stop();
+  };
+
+  const cancelBuyerVoiceRecording = () => {
+    if (buyerMediaRecorderRef.current) {
+      clearInterval(buyerTimerRef.current);
+      buyerMediaRecorderRef.current.stream.getTracks().forEach((t) => t.stop());
+      buyerMediaRecorderRef.current = null;
+      setIsRecording(false);
+      setRecordSeconds(0);
+    }
+  };
+
+  // 🎙️ 3. Seller: Start Recording Audio Reply
+  const startSellerVoiceRecording = async (commentId) => {
+    try {
+      const stream = await getOptimizedVoiceStream();
+      sellerAudioChunksRef.current = [];
+
+      const mediaRecorder = createOptimizedMediaRecorder(stream);
+      sellerMediaRecorderRef.current = mediaRecorder;
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) sellerAudioChunksRef.current.push(e.data);
+      };
+
+      mediaRecorder.start(100);
+      setSellerRecordingId(commentId);
+      setSellerRecordSeconds(0);
+
+      sellerTimerRef.current = setInterval(() => {
+        setSellerRecordSeconds((p) => p + 1);
+      }, 1000);
+    } catch (err) {
+      alert('Microphone permission denied.');
+    }
+  };
+
+  // 🎙️ 4. Seller: Stop, Compress & Send Audio Reply
+  const stopAndSendSellerVoice = (commentId) => {
+    const mediaRecorder = sellerMediaRecorderRef.current;
+    if (!mediaRecorder) return;
+
+    mediaRecorder.onstop = async () => {
+      clearInterval(sellerTimerRef.current);
+      setIsCompressingSeller(true);
+
+      try {
+        const audioBlob = new Blob(sellerAudioChunksRef.current, {
+          type: mediaRecorder.mimeType || 'audio/webm',
+        });
+        const compressedAudio = await compressAudioBlob(audioBlob);
+        const durationStr = `0:${sellerRecordSeconds < 10 ? '0' : ''}${sellerRecordSeconds}`;
+
+        hyperlocalStore.addSellerReply(
+          listingId,
+          commentId,
+          {
+            type: 'audio',
+            audioUrl: compressedAudio,
+            duration: durationStr,
+            sellerName: `${sellerName} (Owner)`,
+            timestamp: 'Just now',
+          },
+          listingTitle
+        );
+      } catch (err) {
+        console.error('Failed to compress seller voice note:', err);
+      } finally {
+        mediaRecorder.stream.getTracks().forEach((t) => t.stop());
+        setSellerRecordingId(null);
+        setSellerRecordSeconds(0);
+        setActiveReplyId(null);
+        setIsCompressingSeller(false);
+      }
+    };
+
+    mediaRecorder.stop();
+  };
+
+  const cancelSellerVoiceRecording = () => {
+    if (sellerMediaRecorderRef.current) {
+      clearInterval(sellerTimerRef.current);
+      sellerMediaRecorderRef.current.stream.getTracks().forEach((t) => t.stop());
+      sellerMediaRecorderRef.current = null;
+      setSellerRecordingId(null);
+      setSellerRecordSeconds(0);
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (buyerTimerRef.current) clearInterval(buyerTimerRef.current);
+      if (sellerTimerRef.current) clearInterval(sellerTimerRef.current);
+      if (buyerMediaRecorderRef.current) {
+        buyerMediaRecorderRef.current.stream.getTracks().forEach((t) => t.stop());
+      }
+      if (sellerMediaRecorderRef.current) {
+        sellerMediaRecorderRef.current.stream.getTracks().forEach((t) => t.stop());
+      }
+    };
+  }, []);
 
   const handleIncrementInterest = (e) => {
     e.stopPropagation();
     hyperlocalStore.incrementInterest(listingId, interestCount, listingTitle, sellerName);
   };
 
-  // Step 1: Stage query for review & confirmation
   const handleInitiateSend = (e) => {
     if (e) e.preventDefault();
     if (!newComment.trim()) return;
 
-    stopVoice();
     setPendingConfirmQuery({
       senderName: userName.trim() || 'Town User',
       queryText: newComment.trim(),
     });
   };
 
-  // Step 2: Final dispatch on confirmation
   const handleConfirmAndSend = () => {
     if (!pendingConfirmQuery) return;
 
     const { senderName, queryText } = pendingConfirmQuery;
 
-    // Persist to store & Supabase
     hyperlocalStore.addThreadComment(
       listingId,
       {
         userName: senderName,
+        type: 'text',
         text: queryText,
         isPublic: true,
       },
       listingTitle
     );
 
-    // Alert the seller
     if (onNewNotification) {
       onNewNotification({
         tag: 'NEW INQUIRY',
@@ -123,14 +271,18 @@ export default function ListingDiscussionThread({
     setPendingConfirmQuery(null);
   };
 
-  // Seller exclusive reply
-  const handlePostReply = (commentId) => {
+  const handlePostTextReply = (commentId) => {
     if (!replyText.trim()) return;
 
     hyperlocalStore.addSellerReply(
       listingId,
       commentId,
-      { text: replyText.trim() },
+      {
+        type: 'text',
+        text: replyText.trim(),
+        sellerName: `${sellerName} (Owner)`,
+        timestamp: 'Just now',
+      },
       listingTitle
     );
 
@@ -139,7 +291,7 @@ export default function ListingDiscussionThread({
   };
 
   const getAvatarColor = (name = 'U') => {
-    const colors = ['bg-red-500', 'bg-blue-500', 'bg-emerald-500', 'bg-purple-500', 'bg-amber-500', 'bg-teal-500'];
+    const colors = ['bg-rose-500', 'bg-blue-500', 'bg-emerald-500', 'bg-purple-500', 'bg-amber-500', 'bg-teal-500'];
     let hash = 0;
     for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
     return colors[Math.abs(hash) % colors.length];
@@ -195,13 +347,11 @@ export default function ListingDiscussionThread({
       {isOpen && (
         <div
           onClick={(e) => e.stopPropagation()}
-          className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-xs flex items-end justify-center animate-fade-in"
+          className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-xs flex items-end justify-center animate-fade-in select-none"
         >
           <div className="absolute inset-0" onClick={() => setIsOpen(false)} />
 
           <div className="relative z-10 bg-[#121212] border-t border-zinc-800 rounded-t-3xl w-full max-w-md max-h-[90vh] flex flex-col shadow-2xl text-zinc-100 animate-slide-up">
-            
-            {/* Sheet Handle */}
             <div className="w-10 h-1 bg-zinc-700 rounded-full mx-auto mt-2.5 mb-1" />
 
             {/* Header Bar */}
@@ -209,7 +359,7 @@ export default function ListingDiscussionThread({
               <div>
                 <h2 className="text-sm font-black text-white flex items-center space-x-1.5">
                   <span>💬</span>
-                  <span>Questions & Inquiries ({comments.length})</span>
+                  <span>Direct Voice & Questions ({comments.length})</span>
                 </h2>
                 <p className="text-[10px] text-zinc-400 truncate max-w-[220px]">
                   {listingTitle}
@@ -243,15 +393,16 @@ export default function ListingDiscussionThread({
             <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4 max-h-[46vh]">
               {comments.length === 0 ? (
                 <div className="text-center py-12 space-y-2">
-                  <span className="text-3xl text-zinc-600">🔍</span>
+                  <span className="text-3xl text-zinc-600">🎙️</span>
                   <p className="text-xs text-zinc-400 font-medium">
-                    No inquiries yet. Use the Google-style ask bar below to ask!
+                    No questions yet. Tap the mic below to ask via voice note!
                   </p>
                 </div>
               ) : (
                 comments.map((c, idx) => {
                   const userInitial = (c.userName || 'U').charAt(0).toUpperCase();
                   const avatarBg = getAvatarColor(c.userName || 'U');
+                  const isSellerRecordingThis = sellerRecordingId === c.id;
 
                   return (
                     <div key={c.id || idx} className="space-y-2">
@@ -260,7 +411,7 @@ export default function ListingDiscussionThread({
                           {userInitial}
                         </div>
 
-                        <div className="flex-1 space-y-0.5 min-w-0">
+                        <div className="flex-1 space-y-1 min-w-0">
                           <div className="flex items-center space-x-1.5">
                             <span className="text-[11px] font-bold text-zinc-200 truncate">
                               @{c.userName?.toLowerCase().replace(/\s+/g, '_') || 'town_user'}
@@ -270,32 +421,42 @@ export default function ListingDiscussionThread({
                             </span>
                           </div>
 
-                          <p className="text-xs text-zinc-100 leading-relaxed break-words font-normal">
-                            {c.text}
-                          </p>
+                          {/* Render Voice Note Player or Text */}
+                          {c.type === 'audio' || c.audioUrl ? (
+                            <VoiceNotePlayer
+                              audioUrl={c.audioUrl}
+                              duration={c.audioDuration}
+                              senderName={c.userName}
+                            />
+                          ) : (
+                            <p className="text-xs text-zinc-100 leading-relaxed break-words font-normal">
+                              {c.text}
+                            </p>
+                          )}
 
-                          {isSellerMode && !c.sellerReply && (
+                          {isSellerMode && !c.sellerReply && activeReplyId !== c.id && (
                             <div className="pt-1">
                               <button
                                 type="button"
-                                onClick={() => setActiveReplyId(activeReplyId === c.id ? null : c.id)}
-                                className="text-[11px] font-bold text-amber-400 hover:text-amber-300 transition cursor-pointer"
+                                onClick={() => setActiveReplyId(c.id)}
+                                className="text-[11px] font-bold text-amber-400 hover:text-amber-300 transition cursor-pointer flex items-center space-x-1"
                               >
-                                Reply as Owner ↩
+                                <span>↩</span>
+                                <span>Reply as Owner</span>
                               </button>
                             </div>
                           )}
                         </div>
                       </div>
 
-                      {/* Nested Seller Reply */}
+                      {/* Nested Seller Reply (Voice or Text) */}
                       {c.sellerReply && (
                         <div className="ml-11 flex items-start space-x-2.5 pt-1">
                           <div className="w-6 h-6 rounded-full bg-amber-500 text-zinc-950 font-black text-[10px] flex items-center justify-center shrink-0 shadow-md">
                             👑
                           </div>
 
-                          <div className="flex-1 space-y-0.5 min-w-0">
+                          <div className="flex-1 space-y-1 min-w-0">
                             <div className="flex items-center space-x-1.5">
                               <span className="bg-zinc-800 text-amber-300 border border-amber-500/30 px-1.5 py-0.2 rounded-full text-[10px] font-black flex items-center space-x-0.5">
                                 <span>{sellerName}</span>
@@ -304,31 +465,80 @@ export default function ListingDiscussionThread({
                               <span className="text-[9px] text-zinc-500">• Verified Response</span>
                             </div>
 
-                            <p className="text-xs text-zinc-200 leading-relaxed break-words font-normal">
-                              {c.sellerReply.text}
-                            </p>
+                            {c.sellerReply.type === 'audio' || c.sellerReply.audioUrl ? (
+                              <VoiceNotePlayer
+                                audioUrl={c.sellerReply.audioUrl}
+                                duration={c.sellerReply.duration}
+                                senderName="Owner Voice Note"
+                              />
+                            ) : (
+                              <p className="text-xs text-zinc-200 leading-relaxed break-words font-normal">
+                                {c.sellerReply.text}
+                              </p>
+                            )}
                           </div>
                         </div>
                       )}
 
-                      {/* Seller Inline Reply */}
+                      {/* Seller Inline Reply (Voice or Text) */}
                       {isSellerMode && activeReplyId === c.id && !c.sellerReply && (
-                        <div className="ml-11 pt-1.5 flex items-center space-x-2">
-                          <input
-                            type="text"
-                            autoFocus
-                            placeholder={`Reply as ${sellerName}...`}
-                            value={replyText}
-                            onChange={(e) => setReplyText(e.target.value)}
-                            className="flex-1 bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-1.5 text-xs text-white placeholder-zinc-500 focus:outline-hidden focus:border-amber-400"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => handlePostReply(c.id)}
-                            className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold rounded-xl text-xs cursor-pointer active:scale-95"
-                          >
-                            Reply
-                          </button>
+                        <div className="ml-11 pt-1.5 space-y-1.5">
+                          {isSellerRecordingThis ? (
+                            <div className="flex items-center justify-between p-2 bg-rose-500/20 border border-rose-500/50 rounded-2xl animate-pulse">
+                              <span className="text-xs font-black text-rose-300">
+                                {isCompressingSeller
+                                  ? 'Compressing Voice Note...'
+                                  : `🔴 Owner Voice: 0:${sellerRecordSeconds < 10 ? '0' : ''}${sellerRecordSeconds}`}
+                              </span>
+                              <div className="flex items-center space-x-1.5">
+                                <button
+                                  type="button"
+                                  onClick={cancelSellerVoiceRecording}
+                                  disabled={isCompressingSeller}
+                                  className="text-[10px] font-bold text-zinc-400 hover:text-white"
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => stopAndSendSellerVoice(c.id)}
+                                  disabled={isCompressingSeller}
+                                  className="px-2.5 py-1 bg-emerald-500 text-zinc-950 font-black text-xs rounded-xl shadow-md cursor-pointer"
+                                >
+                                  {isCompressingSeller ? 'Sending...' : 'Send Voice ➔'}
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex items-center space-x-2">
+                              <button
+                                type="button"
+                                onClick={() => startSellerVoiceRecording(c.id)}
+                                className="w-8 h-8 rounded-xl bg-amber-400 hover:bg-amber-300 text-zinc-950 flex items-center justify-center text-sm font-black shadow-md cursor-pointer shrink-0"
+                                title="Reply with Voice Note"
+                              >
+                                🎙️
+                              </button>
+
+                              <input
+                                type="text"
+                                autoFocus
+                                placeholder={`Reply as ${sellerName}...`}
+                                value={replyText}
+                                onChange={(e) => setReplyText(e.target.value)}
+                                onKeyDown={(e) => e.key === 'Enter' && handlePostTextReply(c.id)}
+                                className="flex-1 bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-1.5 text-xs text-white placeholder-zinc-500 focus:outline-hidden focus:border-amber-400"
+                              />
+
+                              <button
+                                type="button"
+                                onClick={() => handlePostTextReply(c.id)}
+                                className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold rounded-xl text-xs cursor-pointer active:scale-95 shrink-0"
+                              >
+                                Reply
+                              </button>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -337,9 +547,8 @@ export default function ListingDiscussionThread({
               )}
             </div>
 
-            {/* 🌟 3. GOOGLE-STYLE ASK SEARCH BAR */}
+            {/* 🌟 3. BUYER ASK BAR */}
             <div className="p-3.5 border-t border-zinc-800 bg-[#161616] space-y-2.5">
-              
               <div className="flex items-center justify-between px-2">
                 <input
                   type="text"
@@ -348,71 +557,80 @@ export default function ListingDiscussionThread({
                   onChange={(e) => setUserName(e.target.value)}
                   className="bg-transparent text-[11px] text-zinc-300 placeholder-zinc-500 focus:outline-hidden"
                 />
-                {isRecording && (
-                  <span className="text-[10px] text-rose-400 font-bold animate-pulse flex items-center space-x-1">
-                    <span className="w-2 h-2 rounded-full bg-rose-500" />
-                    <span>Listening... Release / tap mic to stop</span>
-                  </span>
-                )}
+                <span className="text-[10px] text-amber-400 font-bold">
+                  Tap mic for instant voice note 🎙️
+                </span>
               </div>
 
-              {/* Google Search Bar Pill */}
-              <form onSubmit={handleInitiateSend} className="relative">
-                <div className={`flex items-center bg-[#202124] border rounded-full px-4 py-2.5 shadow-xl transition ${
-                  isRecording ? 'border-rose-500 ring-2 ring-rose-500/20' : 'border-zinc-700/80 focus-within:border-zinc-500'
-                }`}>
-                  
-                  {/* Google-Style Magnifying Search Icon */}
-                  <span className="text-zinc-400 text-sm mr-2.5">🔍</span>
+              {isRecording ? (
+                <div className="flex items-center justify-between bg-rose-500/20 border border-rose-500/60 rounded-full px-4 py-2.5 animate-pulse">
+                  <div className="flex items-center space-x-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping" />
+                    <span className="text-xs font-black text-rose-300">
+                      {isCompressingBuyer
+                        ? 'Compressing Voice Note...'
+                        : `Recording Voice Note: 0:${recordSeconds < 10 ? '0' : ''}${recordSeconds}`}
+                    </span>
+                  </div>
 
-                  {/* Input field */}
-                  <input
-                    ref={inputRef}
-                    type="text"
-                    placeholder={isRecording ? 'Speaking...' : 'Ask about price, availability, timings...'}
-                    value={newComment}
-                    onChange={(e) => setNewComment(e.target.value)}
-                    className="flex-1 bg-transparent text-xs text-white placeholder-zinc-400 focus:outline-hidden"
-                  />
-
-                  {/* Google-Style Mic Button (Hold or Tap) */}
-                  <button
-                    type="button"
-                    onMouseDown={startVoice}
-                    onMouseUp={stopVoice}
-                    onTouchStart={startVoice}
-                    onTouchEnd={stopVoice}
-                    onClick={() => {
-                      if (isRecording) stopVoice();
-                      else startVoice();
-                    }}
-                    className={`ml-2 w-8 h-8 rounded-full flex items-center justify-center text-sm transition cursor-pointer select-none ${
-                      isRecording
-                        ? 'bg-rose-600 text-white animate-pulse shadow-lg scale-110'
-                        : 'text-zinc-300 hover:text-white hover:bg-zinc-700/60'
-                    }`}
-                    title="Hold or Tap to speak"
-                  >
-                    🎙️
-                  </button>
-
-                  {/* Ask / Send Button */}
-                  <button
-                    type="submit"
-                    disabled={!newComment.trim()}
-                    className="ml-1.5 px-3 py-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-30 text-white font-black text-xs rounded-full transition cursor-pointer active:scale-95 shrink-0"
-                  >
-                    Ask
-                  </button>
+                  <div className="flex items-center space-x-2">
+                    <button
+                      type="button"
+                      onClick={cancelBuyerVoiceRecording}
+                      disabled={isCompressingBuyer}
+                      className="text-[10px] font-bold text-zinc-400 hover:text-white"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={stopAndSendBuyerVoice}
+                      disabled={isCompressingBuyer}
+                      className="px-3 py-1 bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-black text-xs rounded-full shadow-md cursor-pointer active:scale-95"
+                    >
+                      {isCompressingBuyer ? 'Sending...' : 'Send Voice ➔'}
+                    </button>
+                  </div>
                 </div>
-              </form>
+              ) : (
+                <form onSubmit={handleInitiateSend} className="relative">
+                  <div className="flex items-center bg-[#202124] border border-zinc-700/80 focus-within:border-zinc-500 rounded-full px-4 py-2 shadow-xl transition">
+                    <span className="text-zinc-400 text-sm mr-2.5">🔍</span>
+
+                    <input
+                      ref={inputRef}
+                      type="text"
+                      placeholder="Ask about price, condition, visit timings..."
+                      value={newComment}
+                      onChange={(e) => setNewComment(e.target.value)}
+                      className="flex-1 bg-transparent text-xs text-white placeholder-zinc-400 focus:outline-hidden"
+                    />
+
+                    <button
+                      type="button"
+                      onClick={startBuyerVoiceRecording}
+                      className="ml-2 w-8 h-8 rounded-full bg-amber-400 hover:bg-amber-300 text-zinc-950 flex items-center justify-center text-sm font-black transition cursor-pointer shadow-md active:scale-90 shrink-0"
+                      title="Record Voice Note"
+                    >
+                      🎙️
+                    </button>
+
+                    <button
+                      type="submit"
+                      disabled={!newComment.trim()}
+                      className="ml-1.5 px-3 py-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-30 text-white font-black text-xs rounded-full transition cursor-pointer active:scale-95 shrink-0"
+                    >
+                      Ask
+                    </button>
+                  </div>
+                </form>
+              )}
             </div>
 
-            {/* 🌟 4. CONFIRMATION SHEET (Before Sending) */}
+            {/* 🌟 4. CONFIRMATION SHEET */}
             {pendingConfirmQuery && (
               <div className="absolute inset-0 z-50 bg-black/85 backdrop-blur-sm rounded-t-3xl flex items-center justify-center p-4 animate-fade-in">
                 <div className="bg-[#1f1f1f] border border-zinc-700 rounded-2xl p-4 w-full max-w-sm space-y-3.5 shadow-2xl">
-                  
                   <div className="flex items-center space-x-2">
                     <span className="text-base">💬</span>
                     <h3 className="text-xs font-black text-white">Confirm Question to Seller</h3>
@@ -428,7 +646,7 @@ export default function ListingDiscussionThread({
                   </div>
 
                   <p className="text-[10px] text-zinc-400">
-                    This question will be sent directly to <strong>{sellerName}</strong> and published publicly on the listing.
+                    This question will be sent directly to <strong>{sellerName}</strong> and published on the listing.
                   </p>
 
                   <div className="flex items-center space-x-2 pt-1">
