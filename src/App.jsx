@@ -1,12 +1,20 @@
-import React, { useState, useMemo, useRef, lazy, Suspense } from 'react';
-import { useNotificationSlice, hyperlocalStore } from './store/hyperlocalStore';
+import React, { useState, useMemo, useRef, useEffect, lazy, Suspense } from 'react';
+import {
+  useNotificationSlice,
+  hyperlocalStore,
+  hydrateFromDB,
+  initRealtimeSubscriptions,
+} from './store/hyperlocalStore';
 import { useUserLocation } from './hooks/useUserLocation';
+import { getCurrentUserProfile, logoutUser } from './services/authService';
 
-// Instant Critical Screens & Hubs
+// Instant Critical Screens & Modals
 import HyperlocalHomeFeed from './HyperlocalHomeFeed';
 import TownHubView from './categories/TownHubView';
 import NotificationCenter from './components/NotificationCenter';
-// Replace static modal imports with lazy imports:
+import AuthModal from './components/common/AuthModal';
+
+// Lazy Loaded Modals
 const ContextualListingModal = lazy(() => import('./components/ContextualListingModal'));
 const ListingDetailModal = lazy(() => import('./components/common/ListingDetailModal'));
 
@@ -78,6 +86,11 @@ export default function App() {
   const { location: userLocation, isLocating, detectLocation } = useUserLocation();
   const selectedCity = userLocation?.city || 'Alwar';
 
+  // 🛡️ User Authentication & Verification State
+  const [currentUser, setCurrentUser] = useState(() => getCurrentUserProfile());
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [authActionTitle, setAuthActionTitle] = useState('Verify Phone to Continue');
+
   const [isListingModalOpen, setIsListingModalOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [selectedDetailItem, setSelectedDetailItem] = useState(null);
@@ -86,6 +99,12 @@ export default function App() {
   const touchStartX = useRef(0);
   const touchStartY = useRef(0);
   const touchStartTime = useRef(0);
+
+  // Initialize DB Hydration & Realtime WebSockets on Boot
+  useEffect(() => {
+    hydrateFromDB();
+    initRealtimeSubscriptions();
+  }, []);
 
   const currentNav = history[historyIndex] || INITIAL_NAV_STATE;
   const {
@@ -97,7 +116,7 @@ export default function App() {
 
   const notifications = useNotificationSlice();
   const unreadNotifCount = useMemo(
-    () => (notifications || []).filter((n) => !n.read).length,
+    () => (notifications || []).filter((n) => !n.read && !n.is_read).length,
     [notifications]
   );
 
@@ -140,6 +159,32 @@ export default function App() {
     hyperlocalStore.addNotification(notif);
   };
 
+  // 🛡️ Action Gates: Require Verified Identity for Posting & Provider Access
+  const handleOpenPostModal = () => {
+    if (!currentUser) {
+      setAuthActionTitle('Verify Phone to Post Listing');
+      setIsAuthModalOpen(true);
+      return;
+    }
+    setIsListingModalOpen(true);
+  };
+
+  const handleOpenBusinessHub = () => {
+    if (!currentUser) {
+      setAuthActionTitle('Verify Phone to Open Business Hub');
+      setIsAuthModalOpen(true);
+      return;
+    }
+    navigateTo({ screen: 'provider-dashboard', searchQuery: '' });
+  };
+
+  const handleLogout = async () => {
+    if (window.confirm('Do you want to log out of this account?')) {
+      await logoutUser();
+      setCurrentUser(null);
+    }
+  };
+
   // 🔔 Deep link router when tapping an alert
   const handleSelectNotification = (notif) => {
     setIsNotificationsOpen(false);
@@ -160,16 +205,16 @@ export default function App() {
     }
   };
 
-  // 🌟 TOUCH SWIPE GESTURE HANDLERS
+  // 🌟 Touch Swipe Gesture Handlers
   const handleTouchStart = (e) => {
-    if (isListingModalOpen || isNotificationsOpen || selectedDetailItem) return;
+    if (isListingModalOpen || isNotificationsOpen || selectedDetailItem || isAuthModalOpen) return;
     touchStartX.current = e.changedTouches[0].clientX;
     touchStartY.current = e.changedTouches[0].clientY;
     touchStartTime.current = Date.now();
   };
 
   const handleTouchEnd = (e) => {
-    if (isListingModalOpen || isNotificationsOpen || selectedDetailItem) return;
+    if (isListingModalOpen || isNotificationsOpen || selectedDetailItem || isAuthModalOpen) return;
 
     const target = e.target;
     if (target.closest('.overflow-x-auto, input, textarea, select')) return;
@@ -269,7 +314,7 @@ export default function App() {
       onTouchEnd={handleTouchEnd}
       className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between max-w-md mx-auto relative shadow-2xl overflow-x-hidden font-sans select-none pb-24 touch-pan-y"
     >
-      {/* 🌟 1. STICKY HEADER */}
+      {/* 🌟 1. Sticky Header */}
       <header className="sticky top-0 z-40 bg-slate-950/90 backdrop-blur-md px-3 py-2 border-b border-slate-800 flex items-center justify-between shadow-md">
         {/* Left: Step History Controller */}
         <div className="flex items-center space-x-1.5 bg-slate-900/90 p-1 rounded-2xl border border-slate-800 shadow-inner shrink-0">
@@ -323,7 +368,7 @@ export default function App() {
           {currentScreen !== 'home' && currentScreen !== 'provider-dashboard' && (
             <button
               type="button"
-              onClick={() => setIsListingModalOpen(true)}
+              onClick={handleOpenPostModal}
               className="px-2.5 py-1.5 bg-gradient-to-r from-amber-400 to-yellow-400 hover:from-amber-300 text-slate-950 font-black text-[10px] rounded-xl shadow-md active:scale-95 transition cursor-pointer flex items-center space-x-1"
               title="Post in this Category"
             >
@@ -354,10 +399,36 @@ export default function App() {
               </span>
             )}
           </button>
+
+          {/* 👤 Verified User Status Pill / Login Trigger */}
+          {currentUser ? (
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="flex items-center space-x-1 bg-slate-900 hover:bg-slate-800 border border-emerald-500/40 rounded-xl px-2 py-1.5 cursor-pointer active:scale-95 transition"
+              title="Tap to logout"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+              <span className="text-[10px] font-black text-emerald-300 truncate max-w-[60px]">
+                {currentUser.full_name?.split(' ')[0] || 'User'}
+              </span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                setAuthActionTitle('Login / Register via Phone OTP');
+                setIsAuthModalOpen(true);
+              }}
+              className="px-2 py-1.5 bg-amber-400 hover:bg-amber-300 text-slate-950 text-[10px] font-black rounded-xl shadow-md transition active:scale-95 cursor-pointer"
+            >
+              Login
+            </button>
+          )}
         </div>
       </header>
 
-      {/* 🌟 2. MAIN ACTIVE VIEW ROUTER */}
+      {/* 🌟 2. Main Active View Router */}
       <main className="flex-1">
         {currentScreen === 'home' && (
           <HyperlocalHomeFeed
@@ -713,7 +784,7 @@ export default function App() {
         </Suspense>
       </main>
 
-      {/* 🌟 3. FLOATING STEP HISTORY PILL */}
+      {/* 🌟 3. Floating Step History Pill */}
       <aside className="fixed bottom-16 right-4 z-40 flex items-center space-x-1 bg-slate-900/90 backdrop-blur-md p-1.5 rounded-full border border-slate-700 shadow-2xl">
         <button
           type="button"
@@ -748,32 +819,35 @@ export default function App() {
         </button>
       </aside>
 
-      {/* 🌟 4. BOTTOM NAVIGATION BAR */}
-      <footer className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-slate-950/95 backdrop-blur-md border-t border-slate-800 px-6 py-2 z-30 flex items-center justify-around">
+      {/* 🌟 4. Bottom Navigation Bar */}
+      <footer className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-slate-950/95 backdrop-blur-md border-t border-slate-800 px-6 py-2 z-30 flex items-center justify-around shadow-2xl">
         <button
           type="button"
           onClick={() => navigateTo({ screen: 'home', searchQuery: '' })}
-          className={`flex flex-col items-center cursor-pointer transition ${
-            currentScreen === 'home' ? 'text-amber-400' : 'text-slate-400 hover:text-slate-200'
+          className={`flex flex-col items-center cursor-pointer transition active:scale-90 ${
+            currentScreen === 'home' ? 'text-amber-400 font-black' : 'text-slate-400 hover:text-slate-200'
           }`}
         >
           <span className="text-lg">🏛️</span>
           <span className="text-[10px] font-bold">Town Hub</span>
         </button>
 
+        {/* Floating Post Button */}
         <button
           type="button"
-          onClick={() => setIsListingModalOpen(true)}
-          className="w-11 h-11 rounded-full bg-gradient-to-tr from-amber-500 to-yellow-400 text-slate-950 flex items-center justify-center text-xl font-black shadow-lg active:scale-95 transition -mt-5 ring-4 ring-slate-950 cursor-pointer"
+          onClick={handleOpenPostModal}
+          className="w-11 h-11 rounded-full bg-gradient-to-tr from-amber-500 to-yellow-400 text-slate-950 flex items-center justify-center text-xl font-black shadow-lg active:scale-95 hover:scale-105 transition -mt-5 ring-4 ring-slate-950 cursor-pointer"
+          title="Post Listing / Business"
         >
           +
         </button>
 
+        {/* Business Hub Button */}
         <button
           type="button"
-          onClick={() => navigateTo({ screen: 'provider-dashboard', searchQuery: '' })}
-          className={`flex flex-col items-center cursor-pointer transition ${
-            currentScreen === 'provider-dashboard' ? 'text-amber-400' : 'text-slate-400 hover:text-slate-200'
+          onClick={handleOpenBusinessHub}
+          className={`flex flex-col items-center cursor-pointer transition active:scale-90 ${
+            currentScreen === 'provider-dashboard' ? 'text-amber-400 font-black' : 'text-slate-400 hover:text-slate-200'
           }`}
         >
           <span className="text-lg">📊</span>
@@ -781,16 +855,27 @@ export default function App() {
         </button>
       </footer>
 
-      {/* Modals */}
-      {isListingModalOpen && (
-        <ContextualListingModal
-          currentScreen={currentScreen}
-          selectedCategory={selectedCategory}
-          selectedSubCategory={selectedSubCategory}
-          selectedCity={selectedCity}
-          onClose={() => setIsListingModalOpen(false)}
-        />
-      )}
+      {/* 🌟 5. Modals & Drawers */}
+      <Suspense fallback={null}>
+        {isListingModalOpen && (
+          <ContextualListingModal
+            currentScreen={currentScreen}
+            selectedCategory={selectedCategory}
+            selectedSubCategory={selectedSubCategory}
+            selectedCity={selectedCity}
+            onClose={() => setIsListingModalOpen(false)}
+          />
+        )}
+
+        {selectedDetailItem && (
+          <ListingDetailModal
+            item={selectedDetailItem}
+            selectedCity={selectedCity}
+            onClose={() => setSelectedDetailItem(null)}
+            onNewNotification={handleNewNotification}
+          />
+        )}
+      </Suspense>
 
       {isNotificationsOpen && (
         <NotificationCenter
@@ -801,15 +886,22 @@ export default function App() {
         />
       )}
 
-      {/* Global Listing Detail Modal */}
-      {selectedDetailItem && (
-        <ListingDetailModal
-          item={selectedDetailItem}
-          selectedCity={selectedCity}
-          onClose={() => setSelectedDetailItem(null)}
-          onNewNotification={handleNewNotification}
-        />
-      )}
+      {/* 🛡️ Resident Phone Verification Modal */}
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        selectedCity={selectedCity}
+        actionTitle={authActionTitle}
+        onClose={() => setIsAuthModalOpen(false)}
+        onSuccess={(profile) => {
+          setCurrentUser(profile);
+          setIsAuthModalOpen(false);
+          if (authActionTitle.includes('Post')) {
+            setIsListingModalOpen(true);
+          } else if (authActionTitle.includes('Business')) {
+            navigateTo({ screen: 'provider-dashboard', searchQuery: '' });
+          }
+        }}
+      />
     </div>
   );
 }

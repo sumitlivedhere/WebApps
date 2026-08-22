@@ -1,31 +1,69 @@
 import React from 'react';
 
 export default function NotificationCenter({
+  isOpen,
   notifications = [],
   onClose,
   onMarkAllRead,
   onSelectNotification,
 }) {
-  const getTagBadge = (tag = 'ALERT') => {
-    const cleanTag = tag.toUpperCase();
-    if (cleanTag.includes('INTEREST')) {
-      return 'bg-amber-500/20 text-amber-300 border-amber-500/40';
-    }
-    if (cleanTag.includes('INQUIRY') || cleanTag.includes('COMMENT')) {
-      return 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40';
+  if (isOpen === false) return null;
+
+  const getTagMeta = (tag = 'ALERT') => {
+    const cleanTag = String(tag).toUpperCase();
+
+    if (cleanTag.includes('VOICE')) {
+      return {
+        icon: '🎙️',
+        badge: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
+      };
     }
     if (cleanTag.includes('REPLIED') || cleanTag.includes('SELLER')) {
-      return 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40';
+      return {
+        icon: '👑',
+        badge: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
+      };
     }
-    return 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40';
+    if (cleanTag.includes('INTEREST')) {
+      return {
+        icon: '⭐',
+        badge: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40',
+      };
+    }
+    if (cleanTag.includes('LIVE') || cleanTag.includes('PUBLISHED')) {
+      return {
+        icon: '🚀',
+        badge: 'bg-purple-500/20 text-purple-300 border-purple-500/40',
+      };
+    }
+    if (cleanTag.includes('INQUIRY') || cleanTag.includes('COMMENT')) {
+      return {
+        icon: '💬',
+        badge: 'bg-sky-500/20 text-sky-300 border-sky-500/40',
+      };
+    }
+
+    return {
+      icon: '🔔',
+      badge: 'bg-slate-800 text-slate-300 border-slate-700',
+    };
   };
 
-  const getTagIcon = (tag = '') => {
-    const clean = tag.toUpperCase();
-    if (clean.includes('INTEREST')) return '⭐';
-    if (clean.includes('INQUIRY') || clean.includes('COMMENT')) return '💬';
-    if (clean.includes('REPLIED')) return '👑';
-    return '🔔';
+  const formatTimestamp = (item) => {
+    if (item.time && typeof item.time === 'string' && item.time !== 'Just now') {
+      return item.time;
+    }
+    if (item.created_at) {
+      try {
+        return new Date(item.created_at).toLocaleTimeString([], {
+          hour: '2-digit',
+          minute: '2-digit',
+        });
+      } catch {
+        return 'Just now';
+      }
+    }
+    return 'Just now';
   };
 
   return (
@@ -39,30 +77,32 @@ export default function NotificationCenter({
           to { transform: translateY(0); opacity: 1; }
         }
         .animate-slide-up-drawer {
-          animation: slideUpDrawer 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+          animation: slideUpDrawer 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
         }
       `}</style>
 
-      {/* Bottom Sheet Modal Container */}
+      {/* Bottom Sheet Drawer Container */}
       <div
         onClick={(e) => e.stopPropagation()}
         className="bg-slate-900 border-t border-x border-slate-800 w-full max-w-md rounded-t-3xl shadow-2xl flex flex-col max-h-[85vh] overflow-hidden text-slate-100 animate-slide-up-drawer pb-6"
       >
-        {/* Visual Grab Handle / Drag Pill */}
+        {/* Grab Pill */}
         <div className="pt-2.5 pb-1 flex justify-center cursor-grab active:cursor-grabbing">
           <div className="w-12 h-1.5 rounded-full bg-slate-700/80"></div>
         </div>
 
-        {/* Header */}
+        {/* Drawer Header */}
         <div className="px-4 py-2.5 border-b border-slate-800 flex items-center justify-between bg-slate-950/40">
           <div className="flex items-center space-x-2">
-            <span className="text-base">🔔</span>
+            <span className="w-8 h-8 rounded-xl bg-amber-400 text-slate-950 flex items-center justify-center text-sm font-black shadow-md">
+              🔔
+            </span>
             <div>
               <h2 className="text-sm font-black text-white leading-none">
                 Town Alerts & Activity
               </h2>
               <p className="text-[10px] text-slate-400 mt-0.5">
-                {notifications.length} total updates
+                {notifications.length} updates • Voice & inquiries
               </p>
             </div>
           </div>
@@ -95,52 +135,64 @@ export default function NotificationCenter({
               <p className="text-xs font-bold text-slate-300">
                 No notifications yet
               </p>
-              <p className="text-[10px] text-slate-500 max-w-[200px] mx-auto">
-                Inquiries, seller replies, and interest triggers will show here.
+              <p className="text-[10px] text-slate-500 max-w-[220px] mx-auto">
+                Buyer voice inquiries, seller responses, and interest triggers will appear here.
               </p>
             </div>
           ) : (
-            notifications.map((n) => (
-              <div
-                key={n.id}
-                onClick={() => onSelectNotification && onSelectNotification(n)}
-                className={`p-3 rounded-2xl border transition cursor-pointer flex items-start space-x-3 active:scale-98 ${
-                  n.read
-                    ? 'bg-slate-950/40 border-slate-800/80 opacity-70 hover:opacity-100'
-                    : 'bg-slate-800/80 border-slate-700 shadow-md hover:bg-slate-800'
-                }`}
-              >
-                <div className="w-8 h-8 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-sm shrink-0">
-                  {getTagIcon(n.tag)}
-                </div>
+            notifications.map((n) => {
+              const meta = getTagMeta(n.tag);
+              const isUnread = !n.read && !n.is_read;
 
-                <div className="flex-1 min-w-0 space-y-0.5">
-                  <div className="flex items-center justify-between">
-                    <span
-                      className={`text-[9px] font-black uppercase px-1.5 py-0.2 rounded-md border ${getTagBadge(
-                        n.tag
-                      )}`}
-                    >
-                      {n.tag || 'ALERT'}
-                    </span>
-                    <span className="text-[9px] text-slate-500 font-mono">
-                      {n.time || 'Just now'}
-                    </span>
+              return (
+                <div
+                  key={n.id}
+                  onClick={() => onSelectNotification && onSelectNotification(n)}
+                  className={`p-3 rounded-2xl border transition cursor-pointer flex items-start space-x-3 active:scale-98 ${
+                    isUnread
+                      ? 'bg-slate-950/90 border-amber-400/40 shadow-md ring-1 ring-amber-400/20'
+                      : 'bg-slate-950/40 border-slate-800/80 opacity-75 hover:opacity-100 hover:border-slate-700'
+                  }`}
+                >
+                  <div className="w-8 h-8 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center text-sm shrink-0 shadow-inner">
+                    {meta.icon}
                   </div>
 
-                  <h3 className="text-xs font-bold text-white leading-snug truncate">
-                    {n.title}
-                  </h3>
+                  <div className="flex-1 min-w-0 space-y-0.5">
+                    <div className="flex items-center justify-between">
+                      <span className={`text-[9px] font-black uppercase px-1.5 py-0.2 rounded-md border ${meta.badge}`}>
+                        {n.tag || 'ALERT'}
+                      </span>
+                      <span className="text-[9px] text-slate-500 font-mono">
+                        {formatTimestamp(n)}
+                      </span>
+                    </div>
 
-                  {n.message && (
-                    <p className="text-[11px] text-slate-300 leading-relaxed line-clamp-2">
-                      {n.message}
-                    </p>
+                    <h3 className="text-xs font-bold text-white leading-snug truncate pt-0.5">
+                      {n.title}
+                    </h3>
+
+                    {n.message && (
+                      <p className="text-[11px] text-slate-300 leading-relaxed line-clamp-2">
+                        {n.message}
+                      </p>
+                    )}
+                  </div>
+
+                  {isUnread && (
+                    <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0 mt-1 shadow-sm animate-pulse"></span>
                   )}
                 </div>
-              </div>
-            ))
+              );
+            })
           )}
+        </div>
+
+        {/* Expiration Note Footer */}
+        <div className="px-4 py-2 border-t border-slate-800/80 bg-slate-950/30 text-center">
+          <p className="text-[9px] text-slate-500">
+            🔒 Inquiries and voice responses auto-expire after 5 days to keep your feed clean.
+          </p>
         </div>
       </div>
     </div>
