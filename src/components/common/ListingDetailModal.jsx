@@ -1,6 +1,12 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useInterestSlice, useThreadSlice, hyperlocalStore } from '../../store/hyperlocalStore';
 import ActionButtons from './ActionButtons';
+import VoiceNotePlayer from './VoiceNotePlayer';
+import { uploadVoiceNoteToStorage } from '../../services/listingService';
+import {
+  getOptimizedVoiceStream,
+  createOptimizedMediaRecorder,
+} from '../../utils/audioCompressor';
 
 export default function ListingDetailModal({
   item,
@@ -19,16 +25,25 @@ export default function ListingDetailModal({
   const videos = rawVideos.map((v) =>
     typeof v === 'string' ? { url: v, duration: '0:30' } : v
   );
-  const [activeMediaTab, setActiveMediaTab] = useState('photos'); // 'photos' | 'videos'
+  const [activeMediaTab, setActiveMediaTab] = useState('photos');
   const [activeVideoIdx, setActiveVideoIdx] = useState(0);
   const [isVideoMuted, setIsVideoMuted] = useState(true);
 
-  // Q&A State
+  // 💬 Q&A Text & Audio State
   const [userQuery, setUserQuery] = useState('');
   const [userName, setUserName] = useState('');
   const [activeReplyId, setActiveReplyId] = useState(null);
   const [sellerReplyText, setSellerReplyText] = useState('');
   const [isSellerMode, setIsSellerMode] = useState(false);
+
+  // 🎙️ Buyer Audio Recording State
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordSeconds, setRecordSeconds] = useState(0);
+  const [isUploadingVoice, setIsUploadingVoice] = useState(false);
+
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+  const timerRef = useRef(null);
 
   // Gallery resolution
   const gallery =
@@ -61,7 +76,7 @@ export default function ListingDetailModal({
     }
   };
 
-  // 🌟 Live Reactive Slices
+  // Live Reactive Slices
   const interestCount = useInterestSlice(
     item.id,
     Number(item.interestCount || item.interest_count || 0)
@@ -77,7 +92,105 @@ export default function ListingDetailModal({
     );
   };
 
-  // 💬 User submits inquiry
+  // 🎙️ 1. Start Buyer Voice Recording
+  const handleStartVoiceRecording = async () => {
+    try {
+      const stream = await getOptimizedVoiceStream();
+      audioChunksRef.current = [];
+
+      const mediaRecorder = createOptimizedMediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
+
+      mediaRecorder.start(100);
+      setIsRecording(true);
+      setRecordSeconds(0);
+
+      timerRef.current = setInterval(() => {
+        setRecordSeconds((p) => p + 1);
+      }, 1000);
+    } catch (err) {
+      alert('Microphone access denied. Please allow microphone permissions.');
+    }
+  };
+
+  // 🎙️ 2. Stop Recording & Send Voice Note Directly to Seller
+  const handleStopAndSendVoice = () => {
+    const mediaRecorder = mediaRecorderRef.current;
+    if (!mediaRecorder) return;
+
+    mediaRecorder.onstop = async () => {
+      clearInterval(timerRef.current);
+      setIsUploadingVoice(true);
+
+      try {
+        const audioBlob = new Blob(audioChunksRef.current, {
+          type: mediaRecorder.mimeType || 'audio/webm',
+        });
+
+        const publicAudioUrl = await uploadVoiceNoteToStorage(audioBlob);
+        const durationStr = `0:${recordSeconds < 10 ? '0' : ''}${recordSeconds}`;
+        const sender = userName.trim() || 'Town User';
+
+        hyperlocalStore.addThreadComment(
+          item.id,
+          {
+            userName: sender,
+            type: 'audio',
+            audioUrl: publicAudioUrl,
+            audioDuration: durationStr,
+            text: '🎤 Voice Note Question',
+            isPublic: true,
+          },
+          item.title || item.name
+        );
+
+        if (onNewNotification) {
+          onNewNotification({
+            tag: 'VOICE INQUIRY',
+            title: `Voice inquiry on "${item.title || item.name}"`,
+            message: `${sender} sent an audio message (${durationStr})`,
+            time: 'Just now',
+            type: 'comment',
+            targetId: item.id,
+          });
+        }
+      } catch (err) {
+        console.error('Audio upload failed:', err);
+      } finally {
+        mediaRecorder.stream.getTracks().forEach((t) => t.stop());
+        setIsRecording(false);
+        setRecordSeconds(0);
+        setIsUploadingVoice(false);
+      }
+    };
+
+    mediaRecorder.stop();
+  };
+
+  const handleCancelVoiceRecording = () => {
+    if (mediaRecorderRef.current) {
+      clearInterval(timerRef.current);
+      mediaRecorderRef.current.stream.getTracks().forEach((t) => t.stop());
+      mediaRecorderRef.current = null;
+      setIsRecording(false);
+      setRecordSeconds(0);
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+      if (mediaRecorderRef.current) {
+        mediaRecorderRef.current.stream.getTracks().forEach((t) => t.stop());
+      }
+    };
+  }, []);
+
+  // 💬 User submits text query
   const handlePostQuery = (e) => {
     e.preventDefault();
     if (!userQuery.trim()) return;
@@ -90,6 +203,7 @@ export default function ListingDetailModal({
       {
         userName: sender,
         text: text,
+        type: 'text',
         isPublic: true,
       },
       item.title || item.name
@@ -109,14 +223,18 @@ export default function ListingDetailModal({
     setUserQuery('');
   };
 
-  // 👑 Seller publishes official reply
+  // 👑 Seller publishes reply
   const handlePostSellerReply = (commentId) => {
     if (!sellerReplyText.trim()) return;
 
     hyperlocalStore.addSellerReply(
       item.id,
       commentId,
-      { text: sellerReplyText.trim() },
+      {
+        text: sellerReplyText.trim(),
+        type: 'text',
+        sellerName: `${sellerDisplayName} (Owner)`,
+      },
       item.title || item.name
     );
 
@@ -124,7 +242,7 @@ export default function ListingDetailModal({
     setActiveReplyId(null);
   };
 
-  // 📱 Contact & Social URL Resolvers
+  // Contact & Social URL Resolvers
   const rawPhone = item.phone || item.whatsapp || '9876543201';
   const cleanPhone = String(rawPhone).replace(/\D/g, '');
   const formattedPhone = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
@@ -158,7 +276,7 @@ export default function ListingDetailModal({
   return (
     <div className="fixed inset-0 z-50 bg-slate-950 flex flex-col justify-between max-w-md mx-auto animate-fade-in text-slate-100 overflow-hidden select-none">
       
-      {/* 🌟 1. TOP APP BAR */}
+      {/* Top App Bar */}
       <header className="sticky top-0 z-30 bg-slate-950/95 backdrop-blur-md px-4 py-3 border-b border-slate-800 flex items-center justify-between shadow-md">
         <button
           type="button"
@@ -178,10 +296,10 @@ export default function ListingDetailModal({
         </span>
       </header>
 
-      {/* 🌟 2. SCROLLABLE BODY */}
+      {/* Scrollable Body */}
       <main className="flex-1 overflow-y-auto pb-32 space-y-4">
         
-        {/* 🎬 DUAL MEDIA SWITCHER TABS (If listing has videos) */}
+        {/* Media Switcher Tabs */}
         {videos.length > 0 && (
           <div className="px-4 pt-2">
             <div className="flex items-center space-x-1.5 bg-slate-900 p-1 rounded-2xl border border-slate-800 text-xs font-bold">
@@ -214,7 +332,7 @@ export default function ListingDetailModal({
           </div>
         )}
 
-        {/* 📸 A. SWIPEABLE PHOTO CANVAS VIEW */}
+        {/* Photo View */}
         {activeMediaTab === 'photos' && (
           <div className="relative h-80 w-full bg-slate-950 overflow-hidden group">
             <div
@@ -241,7 +359,6 @@ export default function ListingDetailModal({
               ))}
             </div>
 
-            {/* Photo Counter */}
             {totalImages > 1 && (
               <div className="absolute top-3 left-3 px-2.5 py-1 rounded-xl bg-slate-950/80 backdrop-blur-md text-white text-[10px] font-black flex items-center space-x-1 border border-white/10 shadow-lg pointer-events-none">
                 <span>📷</span>
@@ -249,14 +366,12 @@ export default function ListingDetailModal({
               </div>
             )}
 
-            {/* Price Badge */}
             <div className="absolute bottom-3 left-3 bg-slate-950/90 backdrop-blur-md px-3.5 py-1.5 rounded-xl border border-white/10 shadow-lg pointer-events-none">
               <span className="text-base font-black text-amber-400">
                 {item.price || item.rent || item.rates || 'Contact for Price'}
               </span>
             </div>
 
-            {/* Chevrons */}
             {totalImages > 1 && (
               <>
                 <button
@@ -288,7 +403,6 @@ export default function ListingDetailModal({
               </>
             )}
 
-            {/* Dot Indicators */}
             {totalImages > 1 && (
               <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center space-x-1.5 bg-slate-950/60 backdrop-blur-xs px-2.5 py-1 rounded-full pointer-events-none">
                 {gallery.map((_, idx) => (
@@ -304,7 +418,7 @@ export default function ListingDetailModal({
           </div>
         )}
 
-        {/* 🎬 B. VIDEO PLAYER VIEW (Up to 2 videos, max 60s each) */}
+        {/* Video Player View */}
         {activeMediaTab === 'videos' && videos.length > 0 && (
           <div className="px-4 space-y-2">
             <div className="relative h-80 w-full rounded-2xl overflow-hidden bg-black border border-cyan-500/40 shadow-xl flex items-center justify-center">
@@ -318,7 +432,6 @@ export default function ListingDetailModal({
                 className="w-full h-full object-contain"
               />
 
-              {/* Video Badges */}
               <div className="absolute top-3 left-3 flex items-center space-x-1.5 pointer-events-none">
                 <span className="bg-cyan-500 text-slate-950 text-[10px] font-black px-2 py-0.5 rounded-lg shadow-md flex items-center space-x-1">
                   <span>🎬</span>
@@ -331,18 +444,15 @@ export default function ListingDetailModal({
                 )}
               </div>
 
-              {/* Sound Toggle */}
               <button
                 type="button"
                 onClick={() => setIsVideoMuted(!isVideoMuted)}
                 className="absolute top-3 right-3 w-8 h-8 rounded-full bg-slate-950/80 hover:bg-slate-950 text-white text-xs flex items-center justify-center border border-white/20 cursor-pointer shadow-md transition active:scale-90"
-                title={isVideoMuted ? 'Unmute video' : 'Mute video'}
               >
                 {isVideoMuted ? '🔇' : '🔊'}
               </button>
             </div>
 
-            {/* Video Switcher Buttons */}
             {videos.length > 1 && (
               <div className="flex items-center space-x-2 overflow-x-auto py-1 no-scrollbar">
                 {videos.map((vid, idx) => (
@@ -365,10 +475,8 @@ export default function ListingDetailModal({
           </div>
         )}
 
-        {/* 🌟 3. LISTING INFO */}
+        {/* Listing Info */}
         <div className="px-4 space-y-3.5">
-          
-          {/* Title & Subcategory Pill */}
           <div className="space-y-1">
             <div className="flex items-start justify-between">
               <h1 className="text-lg font-black text-white leading-snug">
@@ -380,7 +488,7 @@ export default function ListingDetailModal({
             </div>
           </div>
 
-          {/* ⭐ Interest Counter Action Bar */}
+          {/* Interest Counter Action Bar */}
           <div className="flex items-center justify-between p-3 bg-slate-900/90 border border-slate-800 rounded-2xl">
             <div>
               <div className="text-xs font-black text-white flex items-center space-x-1">
@@ -402,17 +510,13 @@ export default function ListingDetailModal({
             </button>
           </div>
 
-          {/* 🌟 4. VERIFIED SELLER PROFILE & 1-CLICK SOCIAL CONNECT */}
+          {/* Verified Seller Profile & Social Connect */}
           <div className="p-3.5 bg-gradient-to-br from-slate-900 via-slate-900/95 to-slate-950 rounded-2xl border border-slate-800 space-y-3 shadow-md">
-            
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-3">
-                {/* Seller Avatar */}
                 <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-amber-500 to-yellow-400 text-slate-950 font-black text-base flex items-center justify-center shadow-md shrink-0">
                   {sellerInitial}
                 </div>
-
-                {/* Seller Details */}
                 <div className="min-w-0">
                   <div className="flex items-center space-x-1.5">
                     <h3 className="font-black text-white text-sm truncate">
@@ -433,10 +537,7 @@ export default function ListingDetailModal({
               </div>
             </div>
 
-            {/* 1-Click Direct Action Buttons: WhatsApp • Telegram • Call */}
             <div className="grid grid-cols-3 gap-2 pt-1 border-t border-slate-800/80">
-              
-              {/* 1. WhatsApp Button */}
               <a
                 href={whatsappUrl}
                 target="_blank"
@@ -447,7 +548,6 @@ export default function ListingDetailModal({
                 <span>WhatsApp</span>
               </a>
 
-              {/* 2. Telegram Button */}
               <a
                 href={telegramUrl}
                 target="_blank"
@@ -458,7 +558,6 @@ export default function ListingDetailModal({
                 <span>Telegram</span>
               </a>
 
-              {/* 3. Direct Phone Call */}
               <a
                 href={`tel:${cleanPhone}`}
                 className="py-2 px-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-400/40 rounded-xl flex items-center justify-center space-x-1 text-[11px] font-black transition active:scale-95 shadow-sm"
@@ -469,7 +568,7 @@ export default function ListingDetailModal({
             </div>
           </div>
 
-          {/* 📄 About This Service / Offering */}
+          {/* Description */}
           {item.description && (
             <div className="space-y-1.5 p-3.5 bg-slate-900/80 rounded-2xl border border-slate-800">
               <h2 className="text-[11px] font-black text-slate-300 uppercase tracking-wider">
@@ -481,7 +580,7 @@ export default function ListingDetailModal({
             </div>
           )}
 
-          {/* 📍 Location & Address with Turn-by-Turn Map Navigation */}
+          {/* Location & Navigation */}
           <div className="p-3.5 bg-slate-900/90 rounded-2xl border border-slate-800 space-y-2.5">
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-black text-cyan-300 uppercase tracking-wider flex items-center space-x-1">
@@ -510,21 +609,19 @@ export default function ListingDetailModal({
             </a>
           </div>
 
-          {/* 💬 5. PUBLIC QUESTIONS & ANSWERS */}
+          {/* 🌟 5. PUBLIC QUESTIONS & VOICE INQUIRIES WITH DIRECT MIC BUTTON */}
           <div className="p-4 bg-slate-900/90 rounded-2xl border border-slate-800 space-y-3.5">
-            
             <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
               <div>
                 <h3 className="text-xs font-black text-white flex items-center space-x-1.5">
                   <span>💬</span>
-                  <span>Questions & Answers ({comments.length})</span>
+                  <span>Questions & Voice Inquiries ({comments.length})</span>
                 </h3>
                 <p className="text-[10px] text-slate-400">
-                  Ask the seller directly. Only the seller can post official replies.
+                  Speak via 🎙️ or type. Queries expire automatically in 5 days.
                 </p>
               </div>
 
-              {/* Owner Mode Switch */}
               <button
                 type="button"
                 onClick={() => setIsSellerMode(!isSellerMode)}
@@ -533,17 +630,16 @@ export default function ListingDetailModal({
                     ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
                     : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-slate-200'
                 }`}
-                title="Toggle Owner Reply Mode"
               >
                 {isSellerMode ? '👑 Owner Mode' : '👤 User Mode'}
               </button>
             </div>
 
-            {/* Q&A List */}
+            {/* Q&A Thread List */}
             <div className="space-y-3 max-h-64 overflow-y-auto pr-1">
               {comments.length === 0 ? (
                 <div className="text-center py-6 text-slate-500 text-xs font-medium">
-                  No questions asked yet. Be the first to ask below!
+                  No questions asked yet. Tap the 🎙️ mic or type below to ask!
                 </div>
               ) : (
                 comments.map((c, idx) => {
@@ -552,8 +648,6 @@ export default function ListingDetailModal({
 
                   return (
                     <div key={c.id || idx} className="p-3 bg-slate-950/80 border border-slate-850 rounded-xl space-y-2">
-                      
-                      {/* Town User Question */}
                       <div className="flex items-start space-x-2.5">
                         <div className={`w-7 h-7 rounded-full ${avatarBg} text-white font-black text-xs flex items-center justify-center shrink-0`}>
                           {initial}
@@ -566,11 +660,20 @@ export default function ListingDetailModal({
                             </span>
                             <span className="text-slate-500">• {c.timestamp || 'Recently'}</span>
                           </div>
-                          <p className="text-xs text-slate-200 leading-relaxed font-normal">
-                            {c.text}
-                          </p>
 
-                          {/* Seller Reply Trigger */}
+                          {/* Render Audio Player if inquiry was voice */}
+                          {c.type === 'audio' || c.audioUrl ? (
+                            <VoiceNotePlayer
+                              audioUrl={c.audioUrl}
+                              duration={c.audioDuration}
+                              senderName={c.userName}
+                            />
+                          ) : (
+                            <p className="text-xs text-slate-200 leading-relaxed font-normal">
+                              {c.text}
+                            </p>
+                          )}
+
                           {isSellerMode && !c.sellerReply && (
                             <button
                               type="button"
@@ -583,7 +686,7 @@ export default function ListingDetailModal({
                         </div>
                       </div>
 
-                      {/* Nested Verified Seller Reply */}
+                      {/* Nested Seller Reply */}
                       {c.sellerReply && (
                         <div className="ml-8 p-2.5 bg-amber-950/30 border border-amber-500/30 rounded-xl space-y-1">
                           <div className="flex items-center space-x-1.5 text-[10px]">
@@ -593,9 +696,18 @@ export default function ListingDetailModal({
                             </span>
                             <span className="text-amber-400/60 text-[9px]">• Official Response</span>
                           </div>
-                          <p className="text-xs text-amber-100 leading-relaxed pl-1">
-                            {c.sellerReply.text}
-                          </p>
+
+                          {c.sellerReply.type === 'audio' || c.sellerReply.audioUrl ? (
+                            <VoiceNotePlayer
+                              audioUrl={c.sellerReply.audioUrl}
+                              duration={c.sellerReply.duration}
+                              senderName="Owner Voice Note"
+                            />
+                          ) : (
+                            <p className="text-xs text-amber-100 leading-relaxed pl-1">
+                              {c.sellerReply.text}
+                            </p>
+                          )}
                         </div>
                       )}
 
@@ -625,8 +737,8 @@ export default function ListingDetailModal({
               )}
             </div>
 
-            {/* Post Query Input Form */}
-            <form onSubmit={handlePostQuery} className="pt-2 border-t border-slate-800 space-y-2">
+            {/* 🌟 Ask Form: Active Audio Recording OR Text Input with Mic */}
+            <div className="pt-2 border-t border-slate-800 space-y-2">
               <input
                 type="text"
                 placeholder="Your Name (Optional)"
@@ -635,30 +747,73 @@ export default function ListingDetailModal({
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-hidden focus:border-cyan-400"
               />
 
-              <div className="flex items-center space-x-2">
-                <input
-                  type="text"
-                  required
-                  placeholder="Ask a question (price, availability, terms)..."
-                  value={userQuery}
-                  onChange={(e) => setUserQuery(e.target.value)}
-                  className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-hidden focus:border-cyan-400"
-                />
-                <button
-                  type="submit"
-                  disabled={!userQuery.trim()}
-                  className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 disabled:opacity-30 text-white font-black text-xs rounded-xl shadow-md cursor-pointer active:scale-95 transition shrink-0"
-                >
-                  Ask
-                </button>
-              </div>
-            </form>
+              {isRecording ? (
+                /* Active Recording Banner */
+                <div className="flex items-center justify-between p-2.5 bg-rose-500/20 border border-rose-500/50 rounded-xl animate-pulse">
+                  <div className="flex items-center space-x-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping" />
+                    <span className="text-xs font-black text-rose-300">
+                      {isUploadingVoice
+                        ? 'Sending voice note...'
+                        : `Recording: 0:${recordSeconds < 10 ? '0' : ''}${recordSeconds}`}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center space-x-2">
+                    <button
+                      type="button"
+                      onClick={handleCancelVoiceRecording}
+                      disabled={isUploadingVoice}
+                      className="text-[10px] font-bold text-slate-400 hover:text-white"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleStopAndSendVoice}
+                      disabled={isUploadingVoice}
+                      className="px-3 py-1 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs rounded-lg shadow-md cursor-pointer active:scale-95"
+                    >
+                      {isUploadingVoice ? 'Sending...' : 'Send Voice ➔'}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                /* Standard Dual Mode Input: Type or Tap Mic */
+                <form onSubmit={handlePostQuery} className="flex items-center space-x-2">
+                  <button
+                    type="button"
+                    onClick={handleStartVoiceRecording}
+                    title="Tap to ask via Voice Note"
+                    className="w-9 h-9 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 flex items-center justify-center font-black text-sm shrink-0 shadow-md active:scale-90 transition cursor-pointer"
+                  >
+                    🎙️
+                  </button>
+
+                  <input
+                    type="text"
+                    placeholder="Type or tap 🎙️ mic to speak query..."
+                    value={userQuery}
+                    onChange={(e) => setUserQuery(e.target.value)}
+                    className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-hidden focus:border-cyan-400 font-medium"
+                  />
+
+                  <button
+                    type="submit"
+                    disabled={!userQuery.trim()}
+                    className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 disabled:opacity-30 text-white font-black text-xs rounded-xl shadow-md cursor-pointer active:scale-95 transition shrink-0"
+                  >
+                    Ask
+                  </button>
+                </form>
+              )}
+            </div>
           </div>
 
         </div>
       </main>
 
-      {/* 🌟 6. STICKY BOTTOM ACTIONS FOOTER */}
+      {/* Sticky Bottom Actions Footer */}
       <footer className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-slate-950/95 backdrop-blur-md border-t border-slate-800 p-3 z-30 shadow-2xl">
         <ActionButtons
           phone={item.phone || '9876543201'}
@@ -667,7 +822,7 @@ export default function ListingDetailModal({
         />
       </footer>
 
-      {/* 🌟 7. FULL-SCREEN LIGHTBOX */}
+      {/* Full-Screen Lightbox */}
       {isLightboxOpen && (
         <div className="fixed inset-0 z-50 bg-black/95 flex flex-col justify-between animate-fade-in p-4">
           <div className="flex items-center justify-between text-white pb-2">

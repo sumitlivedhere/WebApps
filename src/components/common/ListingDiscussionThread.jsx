@@ -1,10 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useThreadSlice, useInterestSlice, hyperlocalStore } from '../../store/hyperlocalStore';
 import VoiceNotePlayer from './VoiceNotePlayer';
+import { uploadVoiceNoteToStorage } from '../../services/listingService';
 import {
   getOptimizedVoiceStream,
   createOptimizedMediaRecorder,
-  compressAudioBlob,
 } from '../../utils/audioCompressor';
 
 export default function ListingDiscussionThread({
@@ -23,19 +23,19 @@ export default function ListingDiscussionThread({
   const [replyText, setReplyText] = useState('');
   const [isSellerMode, setIsSellerMode] = useState(false);
 
-  // 🎙️ Buyer Audio Recording State
+  // 🎙️ Buyer Audio Recording & Server Upload State
   const [isRecording, setIsRecording] = useState(false);
   const [recordSeconds, setRecordSeconds] = useState(0);
-  const [isCompressingBuyer, setIsCompressingBuyer] = useState(false);
+  const [isUploadingBuyerVoice, setIsUploadingBuyerVoice] = useState(false);
 
   const buyerMediaRecorderRef = useRef(null);
   const buyerAudioChunksRef = useRef([]);
   const buyerTimerRef = useRef(null);
 
-  // 🎙️ Seller Audio Recording State
+  // 🎙️ Seller Audio Recording & Server Upload State
   const [sellerRecordingId, setSellerRecordingId] = useState(null);
   const [sellerRecordSeconds, setSellerRecordSeconds] = useState(0);
-  const [isCompressingSeller, setIsCompressingSeller] = useState(false);
+  const [isUploadingSellerVoice, setIsUploadingSellerVoice] = useState(false);
 
   const sellerMediaRecorderRef = useRef(null);
   const sellerAudioChunksRef = useRef([]);
@@ -47,7 +47,7 @@ export default function ListingDiscussionThread({
   const interestCount = useInterestSlice(listingId, initialInterestCount);
   const inputRef = useRef(null);
 
-  // 🎙️ 1. Buyer: Start Recording Pure Voice Note
+  // 🎙️ 1. Buyer: Start Recording Pure Voice Note (16kHz Mono Opus)
   const startBuyerVoiceRecording = async () => {
     try {
       const stream = await getOptimizedVoiceStream();
@@ -72,20 +72,22 @@ export default function ListingDiscussionThread({
     }
   };
 
-  // 🎙️ 2. Buyer: Stop, Compress & Send Voice Note
+  // 🎙️ 2. Buyer: Stop, Upload to Backend Storage & Save
   const stopAndSendBuyerVoice = () => {
     const mediaRecorder = buyerMediaRecorderRef.current;
     if (!mediaRecorder) return;
 
     mediaRecorder.onstop = async () => {
       clearInterval(buyerTimerRef.current);
-      setIsCompressingBuyer(true);
+      setIsUploadingBuyerVoice(true);
 
       try {
         const audioBlob = new Blob(buyerAudioChunksRef.current, {
           type: mediaRecorder.mimeType || 'audio/webm',
         });
-        const compressedAudio = await compressAudioBlob(audioBlob);
+
+        // Upload voice note to Supabase Storage with 5-day cache header
+        const publicAudioUrl = await uploadVoiceNoteToStorage(audioBlob);
         const durationStr = `0:${recordSeconds < 10 ? '0' : ''}${recordSeconds}`;
         const sender = userName.trim() || 'Town User';
 
@@ -94,7 +96,7 @@ export default function ListingDiscussionThread({
           {
             userName: sender,
             type: 'audio',
-            audioUrl: compressedAudio,
+            audioUrl: publicAudioUrl,
             audioDuration: durationStr,
             text: '🎤 Voice Note Question',
             isPublic: true,
@@ -113,12 +115,12 @@ export default function ListingDiscussionThread({
           });
         }
       } catch (err) {
-        console.error('Failed to compress buyer voice note:', err);
+        console.error('Failed to upload buyer voice note:', err);
       } finally {
         mediaRecorder.stream.getTracks().forEach((t) => t.stop());
         setIsRecording(false);
         setRecordSeconds(0);
-        setIsCompressingBuyer(false);
+        setIsUploadingBuyerVoice(false);
       }
     };
 
@@ -160,20 +162,22 @@ export default function ListingDiscussionThread({
     }
   };
 
-  // 🎙️ 4. Seller: Stop, Compress & Send Audio Reply
+  // 🎙️ 4. Seller: Stop, Upload to Backend Storage & Save
   const stopAndSendSellerVoice = (commentId) => {
     const mediaRecorder = sellerMediaRecorderRef.current;
     if (!mediaRecorder) return;
 
     mediaRecorder.onstop = async () => {
       clearInterval(sellerTimerRef.current);
-      setIsCompressingSeller(true);
+      setIsUploadingSellerVoice(true);
 
       try {
         const audioBlob = new Blob(sellerAudioChunksRef.current, {
           type: mediaRecorder.mimeType || 'audio/webm',
         });
-        const compressedAudio = await compressAudioBlob(audioBlob);
+
+        // Upload to Supabase Storage with 5-day cache header
+        const publicAudioUrl = await uploadVoiceNoteToStorage(audioBlob);
         const durationStr = `0:${sellerRecordSeconds < 10 ? '0' : ''}${sellerRecordSeconds}`;
 
         hyperlocalStore.addSellerReply(
@@ -181,7 +185,7 @@ export default function ListingDiscussionThread({
           commentId,
           {
             type: 'audio',
-            audioUrl: compressedAudio,
+            audioUrl: publicAudioUrl,
             duration: durationStr,
             sellerName: `${sellerName} (Owner)`,
             timestamp: 'Just now',
@@ -189,13 +193,13 @@ export default function ListingDiscussionThread({
           listingTitle
         );
       } catch (err) {
-        console.error('Failed to compress seller voice note:', err);
+        console.error('Failed to upload seller voice note:', err);
       } finally {
         mediaRecorder.stream.getTracks().forEach((t) => t.stop());
         setSellerRecordingId(null);
         setSellerRecordSeconds(0);
         setActiveReplyId(null);
-        setIsCompressingSeller(false);
+        setIsUploadingSellerVoice(false);
       }
     };
 
@@ -359,10 +363,10 @@ export default function ListingDiscussionThread({
               <div>
                 <h2 className="text-sm font-black text-white flex items-center space-x-1.5">
                   <span>💬</span>
-                  <span>Direct Voice & Questions ({comments.length})</span>
+                  <span>Questions & Voice Notes ({comments.length})</span>
                 </h2>
                 <p className="text-[10px] text-zinc-400 truncate max-w-[220px]">
-                  {listingTitle}
+                  {listingTitle} • Auto-clears in 5 days
                 </p>
               </div>
 
@@ -395,8 +399,9 @@ export default function ListingDiscussionThread({
                 <div className="text-center py-12 space-y-2">
                   <span className="text-3xl text-zinc-600">🎙️</span>
                   <p className="text-xs text-zinc-400 font-medium">
-                    No questions yet. Tap the mic below to ask via voice note!
+                    No active questions. Tap the mic below to ask via voice note!
                   </p>
+                  <p className="text-[10px] text-zinc-500">Inquiries expire automatically after 5 days.</p>
                 </div>
               ) : (
                 comments.map((c, idx) => {
@@ -480,21 +485,21 @@ export default function ListingDiscussionThread({
                         </div>
                       )}
 
-                      {/* Seller Inline Reply (Voice or Text) */}
+                      {/* Seller Inline Reply Box (Voice or Text) */}
                       {isSellerMode && activeReplyId === c.id && !c.sellerReply && (
                         <div className="ml-11 pt-1.5 space-y-1.5">
                           {isSellerRecordingThis ? (
                             <div className="flex items-center justify-between p-2 bg-rose-500/20 border border-rose-500/50 rounded-2xl animate-pulse">
                               <span className="text-xs font-black text-rose-300">
-                                {isCompressingSeller
-                                  ? 'Compressing Voice Note...'
-                                  : `🔴 Owner Voice: 0:${sellerRecordSeconds < 10 ? '0' : ''}${sellerRecordSeconds}`}
+                                {isUploadingSellerVoice
+                                  ? 'Saving voice...'
+                                  : `🔴 Recording: 0:${sellerRecordSeconds < 10 ? '0' : ''}${sellerRecordSeconds}`}
                               </span>
                               <div className="flex items-center space-x-1.5">
                                 <button
                                   type="button"
                                   onClick={cancelSellerVoiceRecording}
-                                  disabled={isCompressingSeller}
+                                  disabled={isUploadingSellerVoice}
                                   className="text-[10px] font-bold text-zinc-400 hover:text-white"
                                 >
                                   Cancel
@@ -502,10 +507,10 @@ export default function ListingDiscussionThread({
                                 <button
                                   type="button"
                                   onClick={() => stopAndSendSellerVoice(c.id)}
-                                  disabled={isCompressingSeller}
+                                  disabled={isUploadingSellerVoice}
                                   className="px-2.5 py-1 bg-emerald-500 text-zinc-950 font-black text-xs rounded-xl shadow-md cursor-pointer"
                                 >
-                                  {isCompressingSeller ? 'Sending...' : 'Send Voice ➔'}
+                                  {isUploadingSellerVoice ? 'Sending...' : 'Send Voice ➔'}
                                 </button>
                               </div>
                             </div>
@@ -547,7 +552,7 @@ export default function ListingDiscussionThread({
               )}
             </div>
 
-            {/* 🌟 3. BUYER ASK BAR */}
+            {/* 🌟 3. BUYER ASK BAR (VOICE NOTE OR TEXT) */}
             <div className="p-3.5 border-t border-zinc-800 bg-[#161616] space-y-2.5">
               <div className="flex items-center justify-between px-2">
                 <input
@@ -562,13 +567,14 @@ export default function ListingDiscussionThread({
                 </span>
               </div>
 
+              {/* Active Recording State vs. Normal Search Bar */}
               {isRecording ? (
                 <div className="flex items-center justify-between bg-rose-500/20 border border-rose-500/60 rounded-full px-4 py-2.5 animate-pulse">
                   <div className="flex items-center space-x-2">
                     <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping" />
                     <span className="text-xs font-black text-rose-300">
-                      {isCompressingBuyer
-                        ? 'Compressing Voice Note...'
+                      {isUploadingBuyerVoice
+                        ? 'Saving voice...'
                         : `Recording Voice Note: 0:${recordSeconds < 10 ? '0' : ''}${recordSeconds}`}
                     </span>
                   </div>
@@ -577,7 +583,7 @@ export default function ListingDiscussionThread({
                     <button
                       type="button"
                       onClick={cancelBuyerVoiceRecording}
-                      disabled={isCompressingBuyer}
+                      disabled={isUploadingBuyerVoice}
                       className="text-[10px] font-bold text-zinc-400 hover:text-white"
                     >
                       Cancel
@@ -585,10 +591,10 @@ export default function ListingDiscussionThread({
                     <button
                       type="button"
                       onClick={stopAndSendBuyerVoice}
-                      disabled={isCompressingBuyer}
+                      disabled={isUploadingBuyerVoice}
                       className="px-3 py-1 bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-black text-xs rounded-full shadow-md cursor-pointer active:scale-95"
                     >
-                      {isCompressingBuyer ? 'Sending...' : 'Send Voice ➔'}
+                      {isUploadingBuyerVoice ? 'Sending...' : 'Send Voice ➔'}
                     </button>
                   </div>
                 </div>
@@ -606,6 +612,7 @@ export default function ListingDiscussionThread({
                       className="flex-1 bg-transparent text-xs text-white placeholder-zinc-400 focus:outline-hidden"
                     />
 
+                    {/* 🎙️ Voice Note Trigger Button */}
                     <button
                       type="button"
                       onClick={startBuyerVoiceRecording}
@@ -615,6 +622,7 @@ export default function ListingDiscussionThread({
                       🎙️
                     </button>
 
+                    {/* Ask Button */}
                     <button
                       type="submit"
                       disabled={!newComment.trim()}
@@ -627,7 +635,7 @@ export default function ListingDiscussionThread({
               )}
             </div>
 
-            {/* 🌟 4. CONFIRMATION SHEET */}
+            {/* 🌟 4. CONFIRMATION SHEET (Before Dispatching Text Query) */}
             {pendingConfirmQuery && (
               <div className="absolute inset-0 z-50 bg-black/85 backdrop-blur-sm rounded-t-3xl flex items-center justify-center p-4 animate-fade-in">
                 <div className="bg-[#1f1f1f] border border-zinc-700 rounded-2xl p-4 w-full max-w-sm space-y-3.5 shadow-2xl">
@@ -646,7 +654,7 @@ export default function ListingDiscussionThread({
                   </div>
 
                   <p className="text-[10px] text-zinc-400">
-                    This question will be sent directly to <strong>{sellerName}</strong> and published on the listing.
+                    This question will be sent directly to <strong>{sellerName}</strong> and will expire in 5 days.
                   </p>
 
                   <div className="flex items-center space-x-2 pt-1">

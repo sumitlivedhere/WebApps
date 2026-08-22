@@ -27,6 +27,8 @@ import {
 } from '../services/listingService';
 import { getCategoryById, sanitizeSubCategoryId } from '../data/taxonomyRegistry';
 
+const FIVE_DAYS_MS = 5 * 24 * 60 * 60 * 1000;
+
 /**
  * Normalizes DB rows, mock data, and custom user listings into a single uniform schema
  */
@@ -47,7 +49,7 @@ export function normalizeDBListing(item) {
   const subCatId = sanitizeSubCategoryId(catId, rawSub);
   const categoryFallback = getCategoryFallback(catId);
 
-  // 1. Image Resolution (Handles arrays, JSON strings, and fallbacks)
+  // 1. Image Resolution
   let allImages = [];
   if (Array.isArray(item.image_urls) && item.image_urls.length > 0) {
     allImages = item.image_urls.filter(Boolean);
@@ -67,7 +69,6 @@ export function normalizeDBListing(item) {
     item.avatar ||
     categoryFallback;
 
-  // Base64 safeguard: If an image is a bloated 5MB Base64 string, sanitize it
   if (typeof coverImage === 'string' && coverImage.startsWith('data:image') && coverImage.length > 20000) {
     coverImage = categoryFallback;
   }
@@ -76,7 +77,7 @@ export function normalizeDBListing(item) {
     allImages = [coverImage];
   }
 
-  // 🌟 2. Video Resolution (Handles video objects and string URLs)
+  // 2. Video Resolution
   let allVideos = [];
   if (Array.isArray(item.videos) && item.videos.length > 0) {
     allVideos = item.videos;
@@ -380,26 +381,48 @@ class HyperlocalEngineStore {
     this.notify('all');
   }
 
+  // 🌟 Hydrates threads with 5-Day Expiration Filter & Audio Note Mappings
   hydrateThreads(threadsRows) {
     if (!Array.isArray(threadsRows) || threadsRows.length === 0) return;
     const grouped = {};
+    const now = Date.now();
 
     threadsRows.forEach((row) => {
+      const createdAtTime = new Date(row.created_at).getTime();
+
+      // ⏳ Auto-cleanup: Filter out records older than 5 days
+      if (now - createdAtTime > FIVE_DAYS_MS) return;
+
       const listingId = String(row.listing_id);
       if (!grouped[listingId]) grouped[listingId] = [];
+
+      const hasBuyerAudio = Boolean(row.audio_url);
+      const hasSellerAudio = Boolean(row.seller_audio_url);
 
       grouped[listingId].push({
         id: row.id,
         userName: row.user_name || 'Local Buyer',
         userArea: row.user_area || 'Nearby',
-        text: row.comment_text,
+        text: row.comment_text || (hasBuyerAudio ? '🎤 Voice Note' : ''),
+        type: hasBuyerAudio ? 'audio' : 'text',
+        audioUrl: row.audio_url || null,
+        audioDuration: row.audio_duration || '0:15',
         timestamp: new Date(row.created_at).toLocaleTimeString([], {
           hour: '2-digit',
           minute: '2-digit',
         }),
+        created_at: row.created_at,
         isPublic: row.is_public !== undefined ? row.is_public : true,
-        sellerReply: row.seller_reply
-          ? { text: row.seller_reply, timestamp: 'Verified Response' }
+        sellerReply: (row.seller_reply || hasSellerAudio)
+          ? {
+              text: row.seller_reply || (hasSellerAudio ? '🎤 Voice Note Reply' : ''),
+              type: hasSellerAudio ? 'audio' : 'text',
+              audioUrl: row.seller_audio_url || null,
+              duration: row.seller_audio_duration || '0:15',
+              timestamp: row.seller_replied_at
+                ? new Date(row.seller_replied_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                : 'Verified Response',
+            }
           : null,
       });
     });
@@ -433,17 +456,29 @@ class HyperlocalEngineStore {
   }
 
   getThreadComments(listingId, fallback = []) {
-    return this.state.threads[String(listingId)] || fallback;
+    const comments = this.state.threads[String(listingId)] || fallback;
+    const now = Date.now();
+    // 5-day expiration safeguard
+    return comments.filter((c) => {
+      if (!c.created_at) return true;
+      return now - new Date(c.created_at).getTime() <= FIVE_DAYS_MS;
+    });
   }
 
   addThreadComment(listingId, comment, listingTitle = '') {
     const strId = String(listingId);
+    const hasAudio = Boolean(comment.audioUrl);
+
     const newEntry = {
       id: comment.id || `local-${Date.now()}`,
       userName: comment.userName || 'Local Buyer',
       userArea: comment.userArea || 'Nearby',
-      text: comment.text,
+      text: comment.text || (hasAudio ? '🎤 Voice Note' : ''),
+      type: comment.type || (hasAudio ? 'audio' : 'text'),
+      audioUrl: comment.audioUrl || null,
+      audioDuration: comment.audioDuration || '0:15',
       timestamp: 'Just now',
+      created_at: new Date().toISOString(),
       isPublic: comment.isPublic !== undefined ? comment.isPublic : true,
       sellerReply: null,
     };
@@ -452,9 +487,9 @@ class HyperlocalEngineStore {
     this.notify(`thread:${strId}`);
 
     this.addNotification({
-      tag: 'NEW COMMENT',
+      tag: hasAudio ? 'VOICE INQUIRY' : 'NEW COMMENT',
       title: `Inquiry on "${listingTitle || 'Listing'}"`,
-      message: `${newEntry.userName} asked: "${newEntry.text}"`,
+      message: `${newEntry.userName} sent a ${hasAudio ? 'voice note' : 'message'}.`,
       time: 'Just now',
       type: 'comment',
       targetId: listingId,
@@ -475,21 +510,32 @@ class HyperlocalEngineStore {
 
   addSellerReply(listingId, commentId, replyObj, listingTitle = '') {
     const strId = String(listingId);
+    const hasAudio = Boolean(replyObj?.audioUrl);
+
+    const formattedReply = {
+      text: replyObj.text || (hasAudio ? '🎤 Voice Note Reply' : ''),
+      type: replyObj.type || (hasAudio ? 'audio' : 'text'),
+      audioUrl: replyObj.audioUrl || null,
+      duration: replyObj.duration || '0:15',
+      sellerName: replyObj.sellerName || 'Verified Member',
+      timestamp: 'Just now',
+    };
+
     this.state.threads[strId] = (this.state.threads[strId] || []).map((c) =>
-      c.id === commentId ? { ...c, sellerReply: replyObj } : c
+      c.id === commentId ? { ...c, sellerReply: formattedReply } : c
     );
     this.notify(`thread:${strId}`);
 
     this.addNotification({
       tag: 'SELLER REPLIED',
       title: `Reply on "${listingTitle || 'Listing'}"`,
-      message: `Seller replied: "${replyObj.text}"`,
+      message: `Seller replied with a ${formattedReply.type === 'audio' ? 'voice note' : 'message'}.`,
       time: 'Just now',
       type: 'reply',
       targetId: listingId,
     });
 
-    saveReplyToDB(commentId, replyObj.text);
+    saveReplyToDB(commentId, replyObj);
   }
 
   getInterestCount(listingId, defaultCount = 0) {
@@ -532,7 +578,6 @@ export const hyperlocalStore = new HyperlocalEngineStore();
 
 /**
  * ⚡ Ultra-fast Light Hydration
- * Selects essential display columns including video_urls and videos
  */
 export async function hydrateFromDB() {
   if (!supabase) return;
@@ -569,11 +614,27 @@ export async function hydrateFromDB() {
       hyperlocalStore.hydrateBulk(listingsData);
     }
 
+    // ⏳ Only query active threads from the last 5 days
+    const fiveDaysAgo = new Date(Date.now() - FIVE_DAYS_MS).toISOString();
     const { data: threadsData, error: threadsError } = await supabase
       .from('listing_threads')
-      .select('id, listing_id, user_name, user_area, comment_text, seller_reply, is_public, created_at')
+      .select(`
+        id,
+        listing_id,
+        user_name,
+        user_area,
+        comment_text,
+        audio_url,
+        audio_duration,
+        seller_reply,
+        seller_audio_url,
+        seller_audio_duration,
+        is_public,
+        created_at
+      `)
+      .gte('created_at', fiveDaysAgo)
       .order('created_at', { ascending: false })
-      .limit(60);
+      .limit(80);
 
     if (!threadsError && threadsData && threadsData.length > 0) {
       hyperlocalStore.hydrateThreads(threadsData);
@@ -624,23 +685,42 @@ export function initRealtimeSubscriptions() {
                   userName: row.user_name || 'Local Buyer',
                   userArea: row.user_area || 'Nearby',
                   text: row.comment_text,
+                  type: row.audio_url ? 'audio' : 'text',
+                  audioUrl: row.audio_url || null,
+                  audioDuration: row.audio_duration || '0:15',
                   timestamp: 'Just now',
+                  created_at: row.created_at,
                   isPublic: row.is_public !== undefined ? row.is_public : true,
-                  sellerReply: row.seller_reply
-                    ? { text: row.seller_reply, timestamp: 'Verified Response' }
+                  sellerReply: (row.seller_reply || row.seller_audio_url)
+                    ? {
+                        text: row.seller_reply,
+                        type: row.seller_audio_url ? 'audio' : 'text',
+                        audioUrl: row.seller_audio_url || null,
+                        duration: row.seller_audio_duration || '0:15',
+                        timestamp: 'Verified Response',
+                      }
                     : null,
                 },
                 ...currentThreads,
               ];
               hyperlocalStore.notify(`thread:${strId}`);
             }
-          } else if (payload.eventType === 'UPDATE' && row.seller_reply) {
+          } else if (payload.eventType === 'UPDATE') {
             const strId = String(row.listing_id);
             hyperlocalStore.state.threads[strId] = (
               hyperlocalStore.state.threads[strId] || []
             ).map((c) =>
               String(c.id) === String(row.id)
-                ? { ...c, sellerReply: { text: row.seller_reply, timestamp: 'Just now' } }
+                ? {
+                    ...c,
+                    sellerReply: {
+                      text: row.seller_reply,
+                      type: row.seller_audio_url ? 'audio' : 'text',
+                      audioUrl: row.seller_audio_url || null,
+                      duration: row.seller_audio_duration || '0:15',
+                      timestamp: 'Just now',
+                    },
+                  }
                 : c
             );
             hyperlocalStore.notify(`thread:${strId}`);

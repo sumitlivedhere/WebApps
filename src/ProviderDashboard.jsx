@@ -1,20 +1,20 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { hyperlocalStore, useAllListingsSlice } from './store/hyperlocalStore';
 import VoiceNotePlayer from './components/common/VoiceNotePlayer';
+import { uploadVoiceNoteToStorage } from './services/listingService';
 import {
   getOptimizedVoiceStream,
   createOptimizedMediaRecorder,
-  compressAudioBlob,
 } from './utils/audioCompressor';
 
 export default function ProviderDashboard({ onBack }) {
   const [activeTab, setActiveTab] = useState('inquiries');
   const [replyInputs, setReplyInputs] = useState({});
 
-  // 🎙️ Pure Audio Recording State
+  // 🎙️ Pure Audio Recording & Upload State
   const [recordingId, setRecordingId] = useState(null);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
-  const [isCompressingAudio, setIsCompressingAudio] = useState(false);
+  const [isUploadingAudio, setIsUploadingAudio] = useState(false);
 
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
@@ -22,32 +22,38 @@ export default function ProviderDashboard({ onBack }) {
 
   const allListings = useAllListingsSlice();
 
-  // 1. Provider's Active Listings Portfolio
+  // 1. Reactive state trigger for thread updates
+  const [threadUpdateTick, setThreadUpdateTick] = useState(0);
+
+  useEffect(() => {
+    return hyperlocalStore.subscribe((_, changedKey) => {
+      if (!changedKey || changedKey.startsWith('thread:') || changedKey === 'all') {
+        setThreadUpdateTick((prev) => prev + 1);
+      }
+    });
+  }, []);
+
+  // 2. Provider's Active Listings Portfolio
   const myListings = useMemo(() => {
     return (allListings || []).slice(0, 4);
   }, [allListings]);
 
-  // 2. Aggregated customer questions & audio voice inquiries
+  // 3. Aggregated customer questions & audio voice inquiries (Live Reactivity + 5-Day TTL)
   const userInquiries = useMemo(() => {
     const threadMap = hyperlocalStore.state.threads || {};
     const inquiries = [];
+    const now = Date.now();
+    const FIVE_DAYS_MS = 5 * 24 * 60 * 60 * 1000;
 
     myListings.forEach((listing) => {
-      const listingComments = threadMap[listing.id] || [
-        {
-          id: `demo-${listing.id}-1`,
-          userName: 'Ramesh Gurjar (Moti Dungri)',
-          userArea: 'Alwar',
-          text: 'Kya yeh abhi available hai? Thoda price kam ho sakta hai kya?',
-          audioUrl: null,
-          audioDuration: null,
-          timestamp: '15m ago',
-          isPublic: true,
-          sellerReply: null,
-        },
-      ];
+      const listingComments = threadMap[listing.id] || [];
 
       listingComments.forEach((comm) => {
+        // Enforce 5-day expiration window
+        if (comm.created_at && now - new Date(comm.created_at).getTime() > FIVE_DAYS_MS) {
+          return;
+        }
+
         inquiries.push({
           ...comm,
           listingId: listing.id,
@@ -58,23 +64,43 @@ export default function ProviderDashboard({ onBack }) {
       });
     });
 
-    return inquiries;
-  }, [myListings, allListings]);
+    // Fallback demo inquiry if store is empty on first visit
+    if (inquiries.length === 0 && myListings.length > 0) {
+      const firstListing = myListings[0];
+      inquiries.push({
+        id: `demo-${firstListing.id}-1`,
+        listingId: firstListing.id,
+        listingTitle: firstListing.title || firstListing.name,
+        listingPrice: firstListing.price || firstListing.rates,
+        listingImage: firstListing.image || (firstListing.images && firstListing.images[0]),
+        userName: 'Ramesh Gurjar (Moti Dungri)',
+        userArea: 'Alwar',
+        text: 'Kya yeh abhi available hai? Thoda price kam ho sakta hai kya?',
+        audioUrl: null,
+        audioDuration: null,
+        timestamp: '15m ago',
+        isPublic: true,
+        sellerReply: null,
+      });
+    }
 
-  // 3. Metrics Calculation
+    return inquiries;
+  }, [myListings, allListings, threadUpdateTick]);
+
+  // 4. Metrics Calculation
   const totalInterests = useMemo(() => {
     const interestMap = hyperlocalStore.state.interests || {};
     return myListings.reduce(
       (sum, item) => sum + (interestMap[item.id] || item.interestCount || 4),
       0
     );
-  }, [myListings]);
+  }, [myListings, threadUpdateTick]);
 
   const pendingInquiriesCount = useMemo(() => {
     return userInquiries.filter((q) => !q.sellerReply).length;
   }, [userInquiries]);
 
-  // 🎙️ 1. Start Voice Recording (16kHz Mono Stream)
+  // 🎙️ 1. Start Voice Recording (Hardware 16kHz Mono Stream)
   const handleStartRecording = async (commentId) => {
     try {
       const stream = await getOptimizedVoiceStream();
@@ -84,9 +110,7 @@ export default function ProviderDashboard({ onBack }) {
       mediaRecorderRef.current = mediaRecorder;
 
       mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) {
-          audioChunksRef.current.push(e.data);
-        }
+        if (e.data.size > 0) audioChunksRef.current.push(e.data);
       };
 
       mediaRecorder.start(100);
@@ -101,40 +125,42 @@ export default function ProviderDashboard({ onBack }) {
     }
   };
 
-  // 🎙️ 2. Stop Recording & Compress Voice Note with Gzip
+  // 🎙️ 2. Stop Recording, Upload to Supabase Storage & Save
   const handleStopAndSendAudio = (listingId, commentId, listingTitle) => {
     const mediaRecorder = mediaRecorderRef.current;
     if (!mediaRecorder) return;
 
     mediaRecorder.onstop = async () => {
       clearInterval(timerRef.current);
-      setIsCompressingAudio(true);
+      setIsUploadingAudio(true);
 
       try {
         const audioBlob = new Blob(audioChunksRef.current, {
           type: mediaRecorder.mimeType || 'audio/webm',
         });
 
-        // Compress audio payload
-        const compressedAudioString = await compressAudioBlob(audioBlob);
+        // 🌟 Uploads directly to Supabase Storage bucket ('listing-images/voice-notes/')
+        const publicAudioUrl = await uploadVoiceNoteToStorage(audioBlob);
         const durationStr = `0:${recordingSeconds < 10 ? '0' : ''}${recordingSeconds}`;
 
         const replyObj = {
           type: 'audio',
-          audioUrl: compressedAudioString,
+          audioUrl: publicAudioUrl,
           duration: durationStr,
+          text: '🎤 Voice Note Reply',
           timestamp: 'Just now',
           sellerName: 'You (Owner)',
         };
 
+        // Persist to Store & Supabase Database
         hyperlocalStore.addSellerReply(listingId, commentId, replyObj, listingTitle);
       } catch (err) {
-        console.error('Audio compression failed:', err);
+        console.error('Audio upload failed:', err);
       } finally {
         mediaRecorder.stream.getTracks().forEach((track) => track.stop());
         setRecordingId(null);
         setRecordingSeconds(0);
-        setIsCompressingAudio(false);
+        setIsUploadingAudio(false);
       }
     };
 
@@ -183,7 +209,7 @@ export default function ProviderDashboard({ onBack }) {
 
   return (
     <main className="p-3.5 space-y-3.5 animate-fade-in text-slate-800 pb-28 select-none">
-      {/* 🌟 1. HEADER */}
+      {/* Header */}
       <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-950 p-4 rounded-3xl text-white shadow-xl flex items-center justify-between border border-slate-800">
         <div className="flex items-center space-x-2.5">
           <div className="w-10 h-10 rounded-2xl bg-amber-400 text-slate-950 flex items-center justify-center text-xl font-black shadow-md">
@@ -194,7 +220,7 @@ export default function ProviderDashboard({ onBack }) {
               Business Hub (ग्राहक बातचीत)
             </h1>
             <p className="text-[10px] text-amber-300 font-bold">
-              Compressed Voice Notes & Buyer Inquiries
+              Direct Voice Notes • Auto-expires in 5 days
             </p>
           </div>
         </div>
@@ -208,7 +234,7 @@ export default function ProviderDashboard({ onBack }) {
         </button>
       </div>
 
-      {/* 🌟 2. METRICS TILES */}
+      {/* Metrics */}
       <div className="grid grid-cols-3 gap-2">
         <div className="bg-slate-900/90 p-3 rounded-2xl border border-slate-800 text-center space-y-0.5 shadow-md">
           <span className="text-[10px] text-slate-400 font-black uppercase tracking-wider block">
@@ -235,7 +261,7 @@ export default function ProviderDashboard({ onBack }) {
         </div>
       </div>
 
-      {/* 🌟 3. NAVIGATION TABS */}
+      {/* Navigation Tabs */}
       <div className="flex bg-slate-900/90 p-1 rounded-2xl border border-slate-800 shadow-inner">
         <button
           type="button"
@@ -267,7 +293,7 @@ export default function ProviderDashboard({ onBack }) {
         </button>
       </div>
 
-      {/* 🌟 4. CUSTOMER INQUIRIES WITH COMPRESSED REAL VOICE NOTES */}
+      {/* Inquiries Stream */}
       {activeTab === 'inquiries' && (
         <section className="space-y-3">
           <div className="flex items-center justify-between px-1">
@@ -282,8 +308,8 @@ export default function ProviderDashboard({ onBack }) {
           {userInquiries.length === 0 ? (
             <div className="bg-slate-900/60 p-8 rounded-2xl border border-slate-800 text-center text-slate-400 space-y-1">
               <span className="text-3xl block">📭</span>
-              <p className="text-xs font-bold text-slate-300">No customer questions yet.</p>
-              <p className="text-[10px]">When local buyers ask about your items, they appear here.</p>
+              <p className="text-xs font-bold text-slate-300">No active customer questions.</p>
+              <p className="text-[10px]">Customer voice notes automatically clear after 5 days.</p>
             </div>
           ) : (
             userInquiries.map((inq) => {
@@ -294,7 +320,6 @@ export default function ProviderDashboard({ onBack }) {
                   key={inq.id}
                   className="bg-white rounded-2xl border border-slate-200 p-3.5 space-y-3 shadow-md transition"
                 >
-                  {/* Context Item Header */}
                   <div className="flex items-center justify-between pb-2 border-b border-slate-100">
                     <div className="flex items-center space-x-2.5 min-w-0">
                       <img
@@ -317,11 +342,11 @@ export default function ProviderDashboard({ onBack }) {
                     </span>
                   </div>
 
-                  {/* Buyer Inquiry: Pure Voice Note OR Text */}
+                  {/* Customer Voice Note or Text */}
                   <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200/80 space-y-1.5">
                     <div className="flex items-center justify-between text-[10px]">
                       <span className="font-extrabold text-slate-900">👤 {inq.userName}</span>
-                      <span className="text-slate-400 text-[9px]">Customer Inquiry</span>
+                      <span className="text-slate-400 text-[9px]">Buyer Question</span>
                     </div>
 
                     {inq.audioUrl ? (
@@ -335,16 +360,14 @@ export default function ProviderDashboard({ onBack }) {
                     )}
                   </div>
 
-                  {/* Seller Reply Box */}
+                  {/* Seller Reply */}
                   {inq.sellerReply ? (
                     <div className="bg-emerald-50 border-l-4 border-emerald-500 p-2.5 rounded-r-xl space-y-1">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[9px] font-black text-emerald-900">
-                          👑 Your Reply ({inq.sellerReply.timestamp}):
-                        </span>
-                      </div>
+                      <span className="text-[9px] font-black text-emerald-900 block">
+                        👑 Your Reply ({inq.sellerReply.timestamp}):
+                      </span>
 
-                      {inq.sellerReply.type === 'audio' ? (
+                      {inq.sellerReply.type === 'audio' || inq.sellerReply.audioUrl ? (
                         <VoiceNotePlayer
                           audioUrl={inq.sellerReply.audioUrl}
                           duration={inq.sellerReply.duration}
@@ -357,7 +380,6 @@ export default function ProviderDashboard({ onBack }) {
                   ) : (
                     /* Interactive Reply Bar */
                     <div className="space-y-2 pt-1">
-                      {/* Quick Response Chips */}
                       <div className="flex items-center space-x-1.5 overflow-x-auto pb-1 no-scrollbar">
                         {['हाँ, उपलब्ध है', 'दुकान पर देख सकते हैं', 'कीमत फिक्स है', 'WhatsApp करें'].map((chip) => (
                           <button
@@ -372,14 +394,13 @@ export default function ProviderDashboard({ onBack }) {
                         ))}
                       </div>
 
-                      {/* Active Recording State vs. Normal Input */}
                       {isRecordingThis ? (
                         <div className="flex items-center justify-between p-2.5 bg-rose-50 border border-rose-300 rounded-2xl animate-pulse">
                           <div className="flex items-center space-x-2">
                             <span className="w-2.5 h-2.5 rounded-full bg-rose-600 animate-ping"></span>
                             <span className="text-xs font-black text-rose-700">
-                              {isCompressingAudio
-                                ? 'Compressing Voice Note...'
+                              {isUploadingAudio
+                                ? 'Saving to server...'
                                 : `Recording: 0:${recordingSeconds < 10 ? '0' : ''}${recordingSeconds}`}
                             </span>
                           </div>
@@ -388,7 +409,7 @@ export default function ProviderDashboard({ onBack }) {
                             <button
                               type="button"
                               onClick={handleCancelRecording}
-                              disabled={isCompressingAudio}
+                              disabled={isUploadingAudio}
                               className="px-2.5 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 text-[10px] font-bold rounded-lg cursor-pointer"
                             >
                               Cancel
@@ -396,10 +417,10 @@ export default function ProviderDashboard({ onBack }) {
                             <button
                               type="button"
                               onClick={() => handleStopAndSendAudio(inq.listingId, inq.id, inq.listingTitle)}
-                              disabled={isCompressingAudio}
+                              disabled={isUploadingAudio}
                               className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs rounded-xl shadow-md cursor-pointer active:scale-95"
                             >
-                              {isCompressingAudio ? 'Sending...' : 'Send Audio ➔'}
+                              {isUploadingAudio ? 'Sending...' : 'Send Audio ➔'}
                             </button>
                           </div>
                         </div>
@@ -447,7 +468,7 @@ export default function ProviderDashboard({ onBack }) {
         </section>
       )}
 
-      {/* 🌟 5. MANAGE ACTIVE LISTINGS */}
+      {/* Active Listings Tab */}
       {activeTab === 'listings' && (
         <section className="space-y-3">
           <div className="flex items-center justify-between px-1">

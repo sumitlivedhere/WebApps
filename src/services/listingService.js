@@ -86,12 +86,16 @@ export async function uploadListingVideosToStorage(videoItems = []) {
     const item = videoItems[i];
     const file = item.file || (item instanceof File ? item : null);
 
-    // If item is already a public URL or plain object without a raw file
     if (!file) {
-      if (typeof item === 'string') {
+      if (typeof item === 'string' && item.startsWith('http')) {
         uploadedVideos.push({ url: item, duration: '0:30', durationSec: 30 });
-      } else if (item.url) {
-        uploadedVideos.push(item);
+      } else if (item?.url && item.url.startsWith('http')) {
+        uploadedVideos.push({
+          url: item.url,
+          duration: item.duration || '0:30',
+          durationSec: item.durationSec || 30,
+          sizeMb: item.sizeMb || '4.0',
+        });
       }
       continue;
     }
@@ -99,7 +103,6 @@ export async function uploadListingVideosToStorage(videoItems = []) {
     if (!supabase) {
       uploadedVideos.push({
         url: item.previewUrl || URL.createObjectURL(file),
-        poster: item.posterUrl || '',
         duration: item.durationStr || '0:30',
         durationSec: item.durationSec || 30,
         sizeMb: item.sizeMb || (file.size / (1024 * 1024)).toFixed(1),
@@ -124,10 +127,9 @@ export async function uploadListingVideosToStorage(videoItems = []) {
         console.warn('Supabase video upload notice:', uploadError.message);
         uploadedVideos.push({
           url: item.previewUrl || URL.createObjectURL(file),
-          poster: item.posterUrl || '',
           duration: item.durationStr || '0:30',
           durationSec: item.durationSec || 30,
-          sizeMb: item.sizeMb || '5.0',
+          sizeMb: item.sizeMb || '4.0',
         });
         continue;
       }
@@ -138,9 +140,9 @@ export async function uploadListingVideosToStorage(videoItems = []) {
 
       const publicVideoUrl = publicUrlData?.publicUrl || item.previewUrl || URL.createObjectURL(file);
 
+      // Clean metadata payload (Base64 poster excluded)
       uploadedVideos.push({
         url: publicVideoUrl,
-        poster: item.posterUrl || '',
         duration: item.durationStr || '0:30',
         durationSec: item.durationSec || 30,
         sizeMb: item.sizeMb || (file.size / (1024 * 1024)).toFixed(1),
@@ -149,7 +151,6 @@ export async function uploadListingVideosToStorage(videoItems = []) {
       console.warn('Video upload catch notice:', err);
       uploadedVideos.push({
         url: item.previewUrl || URL.createObjectURL(file),
-        poster: item.posterUrl || '',
         duration: item.durationStr || '0:30',
       });
     }
@@ -159,7 +160,49 @@ export async function uploadListingVideosToStorage(videoItems = []) {
 }
 
 /**
- * 3. Inserts listing directly into Supabase PostgreSQL 'listings' table
+ * 3. Upload Compressed Voice Notes to Supabase Storage ('listing-images' bucket under /voice-notes/)
+ */
+export async function uploadVoiceNoteToStorage(audioBlobOrFile) {
+  if (!audioBlobOrFile) return null;
+
+  if (typeof audioBlobOrFile === 'string' && (audioBlobOrFile.startsWith('http') || audioBlobOrFile.startsWith('blob:'))) {
+    return audioBlobOrFile;
+  }
+
+  if (!supabase) {
+    return typeof audioBlobOrFile === 'string' ? audioBlobOrFile : URL.createObjectURL(audioBlobOrFile);
+  }
+
+  try {
+    const fileName = `voice_${Date.now()}_${Math.random().toString(36).substring(2, 7)}.webm`;
+    const filePath = `voice-notes/${fileName}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('listing-images')
+      .upload(filePath, audioBlobOrFile, {
+        contentType: 'audio/webm',
+        cacheControl: '432000', // 5-day TTL cache control
+        upsert: true,
+      });
+
+    if (uploadError) {
+      console.warn('Voice upload storage notice:', uploadError.message);
+      return typeof audioBlobOrFile === 'string' ? audioBlobOrFile : URL.createObjectURL(audioBlobOrFile);
+    }
+
+    const { data: publicUrlData } = supabase.storage
+      .from('listing-images')
+      .getPublicUrl(filePath);
+
+    return publicUrlData?.publicUrl || (typeof audioBlobOrFile === 'string' ? audioBlobOrFile : URL.createObjectURL(audioBlobOrFile));
+  } catch (err) {
+    console.warn('Voice note network catch:', err);
+    return typeof audioBlobOrFile === 'string' ? audioBlobOrFile : URL.createObjectURL(audioBlobOrFile);
+  }
+}
+
+/**
+ * 4. Inserts listing directly into Supabase PostgreSQL 'listings' table
  */
 export async function createListingInDB(listingData) {
   const catConfig = getCategoryById(listingData.category) || {};
@@ -169,25 +212,31 @@ export async function createListingInDB(listingData) {
     catConfig.bucketKey ||
     'listings';
 
-  const imageUrlsArray =
+  const imageUrlsArray = (
     Array.isArray(listingData.images) && listingData.images.length > 0
       ? listingData.images
       : Array.isArray(listingData.image_urls) && listingData.image_urls.length > 0
       ? listingData.image_urls
       : listingData.image
       ? [listingData.image]
-      : [];
+      : []
+  ).filter((img) => typeof img === 'string' && !img.startsWith('data:image')); // Strip out accidental base64
 
-  const primaryCover = imageUrlsArray[0] || listingData.image || null;
+  const primaryCover = imageUrlsArray[0] || getCategoryFallback(listingData.category);
 
-  // 🌟 Clean extraction of video objects and string URLs
-  const videoObjects = Array.isArray(listingData.videos) ? listingData.videos : [];
-  const videoUrlsArray =
-    Array.isArray(listingData.video_urls) && listingData.video_urls.length > 0
-      ? listingData.video_urls
-      : videoObjects
-          .map((v) => (typeof v === 'string' ? v : v?.url))
-          .filter(Boolean);
+  // Clean video metadata objects (prevent base64 injection into JSONB)
+  const rawVideos = Array.isArray(listingData.videos) ? listingData.videos : [];
+  const cleanVideoObjects = rawVideos.map((v) => {
+    const videoUrl = typeof v === 'string' ? v : v?.url;
+    return {
+      url: videoUrl,
+      duration: v?.duration || v?.durationStr || '0:30',
+      durationSec: v?.durationSec || 30,
+      sizeMb: v?.sizeMb || '4.0',
+    };
+  }).filter((v) => v.url && typeof v.url === 'string' && !v.url.startsWith('data:'));
+
+  const cleanVideoUrls = cleanVideoObjects.map((v) => v.url);
 
   const dbPayload = {
     title: listingData.title || listingData.name,
@@ -204,8 +253,8 @@ export async function createListingInDB(listingData) {
     lng: listingData.lng !== undefined && listingData.lng !== null ? Number(listingData.lng) : null,
     image_url: primaryCover,
     image_urls: imageUrlsArray,
-    video_urls: videoUrlsArray,
-    videos: videoObjects,
+    video_urls: cleanVideoUrls,
+    videos: cleanVideoObjects,
     interest_count: Number(listingData.interestCount || listingData.interest_count || 0),
     is_active: true,
     created_at: new Date().toISOString(),
@@ -235,7 +284,7 @@ export async function createListingInDB(listingData) {
 }
 
 /**
- * 4. Fetch Live Listings with Video & PostGIS Hydration
+ * 5. Fetch Live Listings with Video & PostGIS Hydration
  */
 export async function fetchLiveListingsFromSupabase(selectedCity = 'Alwar') {
   if (!supabase) return null;
@@ -280,7 +329,7 @@ export async function fetchLiveListingsFromSupabase(selectedCity = 'Alwar') {
         images: rowImages,
         image_urls: rowImages,
         videos: rowVideos,
-        video_urls: rowVideoUrls.length > 0 ? rowVideoUrls : rowVideos.map((v) => v.url).filter(Boolean),
+        video_urls: rowVideoUrls.length > 0 ? rowVideoUrls : rowVideos.map((v) => (typeof v === 'string' ? v : v?.url)).filter(Boolean),
         interestCount: row.interest_count || 0,
         interest_count: row.interest_count || 0,
         createdAt: row.created_at,
@@ -293,7 +342,7 @@ export async function fetchLiveListingsFromSupabase(selectedCity = 'Alwar') {
 }
 
 /**
- * 5. Universal Listing Publisher
+ * 6. Universal Listing Publisher
  */
 export async function publishHyperlocalListing(category, payload) {
   const finalCategory = (category || payload.category || 'property').toLowerCase();
@@ -311,7 +360,7 @@ export async function publishHyperlocalListing(category, payload) {
   const videoUrls =
     Array.isArray(payload.video_urls) && payload.video_urls.length > 0
       ? payload.video_urls
-      : videoObjects.map((v) => (typeof v === 'string' ? v : v.url)).filter(Boolean);
+      : videoObjects.map((v) => (typeof v === 'string' ? v : v?.url)).filter(Boolean);
 
   const formattedItem = {
     id: payload.id || `item_${Date.now()}`,
@@ -358,26 +407,41 @@ export async function publishHyperlocalListing(category, payload) {
   return formattedItem;
 }
 
+/**
+ * 7. Save Buyer Comment / Voice Note to DB & Trigger Seller Notification
+ */
 export async function saveCommentToDB(listingId, comment, listingTitle = '') {
   if (!supabase || !listingId) return null;
   try {
+    const hasAudio = Boolean(comment.audioUrl);
+    const dbPayload = {
+      listing_id: String(listingId),
+      user_name: comment.userName || 'Local Buyer',
+      user_area: comment.userArea || 'Nearby',
+      comment_text: comment.text || (hasAudio ? '🎤 Voice Note Question' : ''),
+      is_public: comment.isPublic !== undefined ? comment.isPublic : true,
+      audio_url: comment.audioUrl || null,
+      audio_duration: comment.audioDuration || null,
+      listing_title: listingTitle || 'Listing',
+      created_at: new Date().toISOString(),
+    };
+
     const { data, error } = await supabase
       .from('listing_threads')
-      .insert([
-        {
-          listing_id: String(listingId),
-          user_name: comment.userName || 'Local Buyer',
-          user_area: comment.userArea || 'Nearby',
-          comment_text: comment.text,
-          is_public: comment.isPublic !== undefined ? comment.isPublic : true,
-          listing_title: listingTitle || 'Listing',
-          created_at: new Date().toISOString(),
-        },
-      ])
+      .insert([dbPayload])
       .select()
       .single();
 
     if (error) console.warn('Save comment notice:', error.message);
+
+    await saveNotificationToDB({
+      tag: hasAudio ? 'VOICE INQUIRY' : 'NEW COMMENT',
+      title: `Inquiry on "${listingTitle || 'Listing'}"`,
+      message: `${dbPayload.user_name} sent a ${hasAudio ? 'voice note' : 'message'}.`,
+      targetId: listingId,
+      type: 'comment',
+    });
+
     return data;
   } catch (err) {
     console.warn('Network notice saving comment:', err);
@@ -385,17 +449,40 @@ export async function saveCommentToDB(listingId, comment, listingTitle = '') {
   }
 }
 
-export async function saveReplyToDB(commentId, replyText) {
+/**
+ * 8. Save Seller Reply / Voice Note to DB & Trigger Buyer Notification
+ */
+export async function saveReplyToDB(commentId, replyObj, listingTitle = '') {
   if (!supabase || !commentId || String(commentId).startsWith('local-')) return null;
   try {
+    const isAudio = replyObj?.type === 'audio' || Boolean(replyObj?.audioUrl);
+    const updatePayload = {
+      seller_reply: isAudio ? (replyObj.text || '🎤 Voice Note Reply') : (typeof replyObj === 'string' ? replyObj : replyObj.text),
+      seller_replied_at: new Date().toISOString(),
+    };
+
+    if (isAudio) {
+      updatePayload.seller_audio_url = replyObj.audioUrl;
+      updatePayload.seller_audio_duration = replyObj.duration;
+    }
+
     const { data, error } = await supabase
       .from('listing_threads')
-      .update({ seller_reply: replyText })
+      .update(updatePayload)
       .eq('id', commentId)
       .select()
       .single();
 
     if (error) console.warn('Save reply notice:', error.message);
+
+    await saveNotificationToDB({
+      tag: 'SELLER REPLIED',
+      title: `Reply on "${listingTitle || 'Listing'}"`,
+      message: `Seller replied with a ${isAudio ? 'voice note' : 'message'}.`,
+      targetId: commentId,
+      type: 'reply',
+    });
+
     return data;
   } catch (err) {
     console.warn('Network notice saving reply:', err);
@@ -403,6 +490,42 @@ export async function saveReplyToDB(commentId, replyText) {
   }
 }
 
+/**
+ * 9. Save In-App Notification directly to Supabase 'notifications' table
+ */
+export async function saveNotificationToDB(notif) {
+  if (!supabase) return null;
+  try {
+    const { data, error } = await supabase
+      .from('notifications')
+      .insert([
+        {
+          tag: notif.tag || 'INQUIRY',
+          title: notif.title || 'New Message',
+          message: notif.message || '',
+          is_read: false,
+          metadata: {
+            targetId: notif.targetId,
+            type: notif.type,
+            subCategory: notif.subCategory,
+          },
+          created_at: new Date().toISOString(),
+        },
+      ])
+      .select()
+      .single();
+
+    if (error) console.warn('Save notification notice:', error.message);
+    return data;
+  } catch (err) {
+    console.warn('Network notice saving notification:', err);
+    return null;
+  }
+}
+
+/**
+ * 10. Update Interest Counter
+ */
 export async function updateInterestCountInDB(listingId, newCount) {
   if (!supabase || !listingId || !isValidDatabaseId(listingId)) return;
   try {
@@ -417,6 +540,9 @@ export async function updateInterestCountInDB(listingId, newCount) {
   }
 }
 
+/**
+ * 11. Category Fallback Image URLs
+ */
 export function getCategoryFallback(catId) {
   const fallbacks = {
     property: 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=700',
