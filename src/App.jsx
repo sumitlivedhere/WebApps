@@ -6,8 +6,9 @@ import { useUserLocation } from './hooks/useUserLocation';
 import HyperlocalHomeFeed from './HyperlocalHomeFeed';
 import TownHubView from './categories/TownHubView';
 import NotificationCenter from './components/NotificationCenter';
-import ContextualListingModal from './components/ContextualListingModal';
-import ListingDetailModal from './components/common/ListingDetailModal';
+// Replace static modal imports with lazy imports:
+const ContextualListingModal = lazy(() => import('./components/ContextualListingModal'));
+const ListingDetailModal = lazy(() => import('./components/common/ListingDetailModal'));
 
 // Code-Split Lazy Loaded Hubs
 const SurpriseFeed = lazy(() => import('./components/SurpriseFeed'));

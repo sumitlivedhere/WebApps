@@ -4,6 +4,7 @@ import { getCategoryById } from '../data/taxonomyRegistry';
 import ActionButtons from './common/ActionButtons';
 import ListingDetailModal from './common/ListingDetailModal';
 
+
 function AdvertisingCardItem({ item, selectedCity, onSelect, getMessageTemplate }) {
   const interestCount = useInterestSlice(
     item.id,
@@ -144,11 +145,14 @@ export default function AdvertisingFeed({
   searchQuery = '',
   onBack,
   onNewNotification,
+  onSelectSubCategory,
 }) {
   const storeListings = useStoreSlice('advertisingProviders') || [];
   const targetSub = (selectedSubCategory || selectedCategory || 'all').toLowerCase().trim();
   const categoryConfig = getCategoryById('advertising') || { subCategories: [] };
   const subCategories = categoryConfig.subCategories || [];
+  const [catSearch, setCatSearch] = useState('');
+  const allListings = hyperlocalStore.getAllListings();
 
   const [selectedDetailItem, setSelectedDetailItem] = useState(null);
 

@@ -2,6 +2,7 @@ import React from 'react';
 import TownHubView from './categories/TownHubView';
 import SearchOverlay from './components/common/SearchOverlay';
 import { hyperlocalStore } from './store/hyperlocalStore';
+import { useState, useEffect } from 'react';
 
 export default function HyperlocalHomeFeed({
   userLocation,
@@ -16,6 +17,14 @@ export default function HyperlocalHomeFeed({
   const currentCity = userLocation?.city || 'Alwar';
   const displayLocality = userLocation?.display || `${userLocation?.locality || 'Nearby'}, ${currentCity}`;
   const allListings = hyperlocalStore.getAllListings();
+  const [localQuery, setLocalQuery] = useState(searchQuery);
+
+  useEffect(() => {
+  const timer = setTimeout(() => {
+    onSearchChange(localQuery);
+  }, 100);
+  return () => clearTimeout(timer);
+}, [localQuery]);
 
   return (
     <div className="p-3.5 space-y-4 animate-fade-in text-slate-800 relative">
