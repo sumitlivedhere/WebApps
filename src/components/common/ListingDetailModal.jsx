@@ -14,6 +14,15 @@ export default function ListingDetailModal({
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
   const carouselRef = useRef(null);
 
+  // 🎬 Video & Media Tab State
+  const rawVideos = item.videos || item.video_urls || [];
+  const videos = rawVideos.map((v) =>
+    typeof v === 'string' ? { url: v, duration: '0:30' } : v
+  );
+  const [activeMediaTab, setActiveMediaTab] = useState('photos'); // 'photos' | 'videos'
+  const [activeVideoIdx, setActiveVideoIdx] = useState(0);
+  const [isVideoMuted, setIsVideoMuted] = useState(true);
+
   // Q&A State
   const [userQuery, setUserQuery] = useState('');
   const [userName, setUserName] = useState('');
@@ -125,7 +134,9 @@ export default function ListingDetailModal({
   )}`;
 
   const telegramUrl = item.telegram
-    ? (String(item.telegram).startsWith('http') ? item.telegram : `https://t.me/${String(item.telegram).replace('@', '')}`)
+    ? String(item.telegram).startsWith('http')
+      ? item.telegram
+      : `https://t.me/${String(item.telegram).replace('@', '')}`
     : `https://t.me/+${formattedPhone}`;
 
   const mapUrl =
@@ -170,94 +181,189 @@ export default function ListingDetailModal({
       {/* 🌟 2. SCROLLABLE BODY */}
       <main className="flex-1 overflow-y-auto pb-32 space-y-4">
         
-        {/* 📸 CLEAN SWIPEABLE PHOTO CANVAS */}
-        <div className="relative h-80 w-full bg-slate-950 overflow-hidden group">
-          
-          <div
-            ref={carouselRef}
-            onScroll={handleScroll}
-            className="w-full h-full flex overflow-x-auto snap-x snap-mandatory scrollbar-none"
-            style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
-          >
-            {gallery.map((imgSrc, idx) => (
-              <div
-                key={idx}
-                onClick={() => setIsLightboxOpen(true)}
-                className="w-full h-full min-w-full snap-start shrink-0 relative cursor-zoom-in"
+        {/* 🎬 DUAL MEDIA SWITCHER TABS (If listing has videos) */}
+        {videos.length > 0 && (
+          <div className="px-4 pt-2">
+            <div className="flex items-center space-x-1.5 bg-slate-900 p-1 rounded-2xl border border-slate-800 text-xs font-bold">
+              <button
+                type="button"
+                onClick={() => setActiveMediaTab('photos')}
+                className={`flex-1 py-1.5 rounded-xl transition cursor-pointer flex items-center justify-center space-x-1.5 ${
+                  activeMediaTab === 'photos'
+                    ? 'bg-amber-400 text-slate-950 font-black shadow-md'
+                    : 'text-slate-400 hover:text-white'
+                }`}
               >
-                <img
-                  src={imgSrc}
-                  alt={`View ${idx + 1}`}
-                  className="w-full h-full object-cover"
-                  onError={(e) => {
-                    e.target.src = 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=700';
-                  }}
-                />
-              </div>
-            ))}
-          </div>
+                <span>📷</span>
+                <span>Photos ({totalImages})</span>
+              </button>
 
-          {/* Photo Counter */}
-          {totalImages > 1 && (
-            <div className="absolute top-3 left-3 px-2.5 py-1 rounded-xl bg-slate-950/80 backdrop-blur-md text-white text-[10px] font-black flex items-center space-x-1 border border-white/10 shadow-lg pointer-events-none">
-              <span>📷</span>
-              <span>{activeImgIndex + 1} / {totalImages}</span>
+              <button
+                type="button"
+                onClick={() => setActiveMediaTab('videos')}
+                className={`flex-1 py-1.5 rounded-xl transition cursor-pointer flex items-center justify-center space-x-1.5 ${
+                  activeMediaTab === 'videos'
+                    ? 'bg-cyan-400 text-slate-950 font-black shadow-md'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <span>🎬</span>
+                <span>Videos ({videos.length})</span>
+              </button>
             </div>
-          )}
-
-          {/* Price Badge */}
-          <div className="absolute bottom-3 left-3 bg-slate-950/90 backdrop-blur-md px-3.5 py-1.5 rounded-xl border border-white/10 shadow-lg pointer-events-none">
-            <span className="text-base font-black text-amber-400">
-              {item.price || item.rent || item.rates || 'Contact for Price'}
-            </span>
           </div>
+        )}
 
-          {/* Chevrons */}
-          {totalImages > 1 && (
-            <>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  scrollToImage(Math.max(0, activeImgIndex - 1));
-                }}
-                disabled={activeImgIndex === 0}
-                className={`absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-slate-950/80 text-white flex items-center justify-center text-xs font-bold transition cursor-pointer shadow-lg backdrop-blur-xs z-10 ${
-                  activeImgIndex === 0 ? 'opacity-0 pointer-events-none' : 'opacity-100 hover:bg-slate-900'
-                }`}
-              >
-                ❮
-              </button>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  scrollToImage(Math.min(totalImages - 1, activeImgIndex + 1));
-                }}
-                disabled={activeImgIndex === totalImages - 1}
-                className={`absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-slate-950/80 text-white flex items-center justify-center text-xs font-bold transition cursor-pointer shadow-lg backdrop-blur-xs z-10 ${
-                  activeImgIndex === totalImages - 1 ? 'opacity-0 pointer-events-none' : 'opacity-100 hover:bg-slate-900'
-                }`}
-              >
-                ❯
-              </button>
-            </>
-          )}
-
-          {/* Dot Indicators */}
-          {totalImages > 1 && (
-            <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center space-x-1.5 bg-slate-950/60 backdrop-blur-xs px-2.5 py-1 rounded-full pointer-events-none">
-              {gallery.map((_, idx) => (
+        {/* 📸 A. SWIPEABLE PHOTO CANVAS VIEW */}
+        {activeMediaTab === 'photos' && (
+          <div className="relative h-80 w-full bg-slate-950 overflow-hidden group">
+            <div
+              ref={carouselRef}
+              onScroll={handleScroll}
+              className="w-full h-full flex overflow-x-auto snap-x snap-mandatory scrollbar-none"
+              style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+            >
+              {gallery.map((imgSrc, idx) => (
                 <div
                   key={idx}
-                  className={`h-1.5 rounded-full transition-all ${
-                    activeImgIndex === idx ? 'w-4 bg-amber-400' : 'w-1.5 bg-white/60'
-                  }`}
-                />
+                  onClick={() => setIsLightboxOpen(true)}
+                  className="w-full h-full min-w-full snap-start shrink-0 relative cursor-zoom-in"
+                >
+                  <img
+                    src={imgSrc}
+                    alt={`View ${idx + 1}`}
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      e.target.src = 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=700';
+                    }}
+                  />
+                </div>
               ))}
             </div>
-          )}
-        </div>
+
+            {/* Photo Counter */}
+            {totalImages > 1 && (
+              <div className="absolute top-3 left-3 px-2.5 py-1 rounded-xl bg-slate-950/80 backdrop-blur-md text-white text-[10px] font-black flex items-center space-x-1 border border-white/10 shadow-lg pointer-events-none">
+                <span>📷</span>
+                <span>{activeImgIndex + 1} / {totalImages}</span>
+              </div>
+            )}
+
+            {/* Price Badge */}
+            <div className="absolute bottom-3 left-3 bg-slate-950/90 backdrop-blur-md px-3.5 py-1.5 rounded-xl border border-white/10 shadow-lg pointer-events-none">
+              <span className="text-base font-black text-amber-400">
+                {item.price || item.rent || item.rates || 'Contact for Price'}
+              </span>
+            </div>
+
+            {/* Chevrons */}
+            {totalImages > 1 && (
+              <>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    scrollToImage(Math.max(0, activeImgIndex - 1));
+                  }}
+                  disabled={activeImgIndex === 0}
+                  className={`absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-slate-950/80 text-white flex items-center justify-center text-xs font-bold transition cursor-pointer shadow-lg backdrop-blur-xs z-10 ${
+                    activeImgIndex === 0 ? 'opacity-0 pointer-events-none' : 'opacity-100 hover:bg-slate-900'
+                  }`}
+                >
+                  ❮
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    scrollToImage(Math.min(totalImages - 1, activeImgIndex + 1));
+                  }}
+                  disabled={activeImgIndex === totalImages - 1}
+                  className={`absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-slate-950/80 text-white flex items-center justify-center text-xs font-bold transition cursor-pointer shadow-lg backdrop-blur-xs z-10 ${
+                    activeImgIndex === totalImages - 1 ? 'opacity-0 pointer-events-none' : 'opacity-100 hover:bg-slate-900'
+                  }`}
+                >
+                  ❯
+                </button>
+              </>
+            )}
+
+            {/* Dot Indicators */}
+            {totalImages > 1 && (
+              <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center space-x-1.5 bg-slate-950/60 backdrop-blur-xs px-2.5 py-1 rounded-full pointer-events-none">
+                {gallery.map((_, idx) => (
+                  <div
+                    key={idx}
+                    className={`h-1.5 rounded-full transition-all ${
+                      activeImgIndex === idx ? 'w-4 bg-amber-400' : 'w-1.5 bg-white/60'
+                    }`}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 🎬 B. VIDEO PLAYER VIEW (Up to 2 videos, max 60s each) */}
+        {activeMediaTab === 'videos' && videos.length > 0 && (
+          <div className="px-4 space-y-2">
+            <div className="relative h-80 w-full rounded-2xl overflow-hidden bg-black border border-cyan-500/40 shadow-xl flex items-center justify-center">
+              <video
+                key={videos[activeVideoIdx]?.url}
+                src={videos[activeVideoIdx]?.url}
+                controls
+                autoPlay
+                playsInline
+                muted={isVideoMuted}
+                className="w-full h-full object-contain"
+              />
+
+              {/* Video Badges */}
+              <div className="absolute top-3 left-3 flex items-center space-x-1.5 pointer-events-none">
+                <span className="bg-cyan-500 text-slate-950 text-[10px] font-black px-2 py-0.5 rounded-lg shadow-md flex items-center space-x-1">
+                  <span>🎬</span>
+                  <span>Video {activeVideoIdx + 1}/{videos.length}</span>
+                </span>
+                {videos[activeVideoIdx]?.duration && (
+                  <span className="bg-slate-950/90 text-cyan-300 text-[10px] font-mono font-bold px-2 py-0.5 rounded-md border border-cyan-400/30">
+                    ⏱️ {videos[activeVideoIdx].duration}
+                  </span>
+                )}
+              </div>
+
+              {/* Sound Toggle */}
+              <button
+                type="button"
+                onClick={() => setIsVideoMuted(!isVideoMuted)}
+                className="absolute top-3 right-3 w-8 h-8 rounded-full bg-slate-950/80 hover:bg-slate-950 text-white text-xs flex items-center justify-center border border-white/20 cursor-pointer shadow-md transition active:scale-90"
+                title={isVideoMuted ? 'Unmute video' : 'Mute video'}
+              >
+                {isVideoMuted ? '🔇' : '🔊'}
+              </button>
+            </div>
+
+            {/* Video Switcher Buttons */}
+            {videos.length > 1 && (
+              <div className="flex items-center space-x-2 overflow-x-auto py-1 no-scrollbar">
+                {videos.map((vid, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => setActiveVideoIdx(idx)}
+                    className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-black transition cursor-pointer flex items-center justify-center space-x-1.5 ${
+                      activeVideoIdx === idx
+                        ? 'bg-cyan-400 text-slate-950 shadow-md'
+                        : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+                    }`}
+                  >
+                    <span>🎬 Video {idx + 1}</span>
+                    <span className="text-[10px] opacity-80">({vid.duration || '0:30'})</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* 🌟 3. LISTING INFO */}
         <div className="px-4 space-y-3.5">

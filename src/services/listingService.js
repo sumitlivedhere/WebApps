@@ -13,22 +13,17 @@ function isValidDatabaseId(id) {
 }
 
 /**
- * Uploads an array of image Files to Supabase Storage ('listing-images' bucket)
- * 1. Hardware-accelerated WebP compression via imageCompressor.js (<100KB per image)
- * 2. Uploads compressed blobs to Supabase Storage
- * 3. Returns clean public CDN URLs (or local blob URLs if Supabase is offline)
+ * 1. Upload Photos to Supabase Storage ('listing-images' bucket)
  */
 export async function uploadListingImagesToStorage(files = [], options = {}) {
   if (!files || files.length === 0) return [];
 
-  // Separate already-uploaded string URLs from raw File objects
   const existingUrls = files.filter((f) => typeof f === 'string');
   const rawFiles = files.filter((f) => f && typeof f !== 'string');
 
   if (rawFiles.length === 0) return existingUrls;
 
   try {
-    // ⚡ 1. Batch compress images with concurrency control
     const compressedFiles = await compressMultipleImages(
       rawFiles,
       {
@@ -39,13 +34,11 @@ export async function uploadListingImagesToStorage(files = [], options = {}) {
       options.onProgress
     );
 
-    // If Supabase client is not configured, fall back to local preview URLs
     if (!supabase) {
       const localUrls = compressedFiles.map((file) => URL.createObjectURL(file));
       return [...existingUrls, ...localUrls];
     }
 
-    // 🌐 2. Upload compressed files to Supabase Storage
     const uploadPromises = compressedFiles.map(async (file, idx) => {
       try {
         const fileName = `${Date.now()}-${Math.random().toString(36).substring(2, 7)}-${idx}.webp`;
@@ -83,7 +76,90 @@ export async function uploadListingImagesToStorage(files = [], options = {}) {
 }
 
 /**
- * Inserts listing directly into Supabase PostgreSQL 'listings' table
+ * 2. Upload Videos to Supabase Storage ('listing-images' bucket under /videos/)
+ */
+export async function uploadListingVideosToStorage(videoItems = []) {
+  if (!videoItems || videoItems.length === 0) return [];
+  const uploadedVideos = [];
+
+  for (let i = 0; i < videoItems.length; i++) {
+    const item = videoItems[i];
+    const file = item.file || (item instanceof File ? item : null);
+
+    // If item is already a public URL or plain object without a raw file
+    if (!file) {
+      if (typeof item === 'string') {
+        uploadedVideos.push({ url: item, duration: '0:30', durationSec: 30 });
+      } else if (item.url) {
+        uploadedVideos.push(item);
+      }
+      continue;
+    }
+
+    if (!supabase) {
+      uploadedVideos.push({
+        url: item.previewUrl || URL.createObjectURL(file),
+        poster: item.posterUrl || '',
+        duration: item.durationStr || '0:30',
+        durationSec: item.durationSec || 30,
+        sizeMb: item.sizeMb || (file.size / (1024 * 1024)).toFixed(1),
+      });
+      continue;
+    }
+
+    try {
+      const fileExt = file.name ? file.name.split('.').pop() : 'webm';
+      const fileName = `vid_${Date.now()}_${Math.random().toString(36).substring(2, 7)}_${i}.${fileExt}`;
+      const filePath = `videos/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('listing-images')
+        .upload(filePath, file, {
+          contentType: file.type || 'video/webm',
+          cacheControl: '31536000',
+          upsert: true,
+        });
+
+      if (uploadError) {
+        console.warn('Supabase video upload notice:', uploadError.message);
+        uploadedVideos.push({
+          url: item.previewUrl || URL.createObjectURL(file),
+          poster: item.posterUrl || '',
+          duration: item.durationStr || '0:30',
+          durationSec: item.durationSec || 30,
+          sizeMb: item.sizeMb || '5.0',
+        });
+        continue;
+      }
+
+      const { data: publicUrlData } = supabase.storage
+        .from('listing-images')
+        .getPublicUrl(filePath);
+
+      const publicVideoUrl = publicUrlData?.publicUrl || item.previewUrl || URL.createObjectURL(file);
+
+      uploadedVideos.push({
+        url: publicVideoUrl,
+        poster: item.posterUrl || '',
+        duration: item.durationStr || '0:30',
+        durationSec: item.durationSec || 30,
+        sizeMb: item.sizeMb || (file.size / (1024 * 1024)).toFixed(1),
+      });
+    } catch (err) {
+      console.warn('Video upload catch notice:', err);
+      uploadedVideos.push({
+        url: item.previewUrl || URL.createObjectURL(file),
+        poster: item.posterUrl || '',
+        duration: item.durationStr || '0:30',
+      });
+    }
+  }
+
+  return uploadedVideos;
+}
+
+/**
+ * 3. Inserts listing directly into Supabase PostgreSQL 'listings' table
  */
 export async function createListingInDB(listingData) {
   const catConfig = getCategoryById(listingData.category) || {};
@@ -104,11 +180,20 @@ export async function createListingInDB(listingData) {
 
   const primaryCover = imageUrlsArray[0] || listingData.image || null;
 
+  // 🌟 Clean extraction of video objects and string URLs
+  const videoObjects = Array.isArray(listingData.videos) ? listingData.videos : [];
+  const videoUrlsArray =
+    Array.isArray(listingData.video_urls) && listingData.video_urls.length > 0
+      ? listingData.video_urls
+      : videoObjects
+          .map((v) => (typeof v === 'string' ? v : v?.url))
+          .filter(Boolean);
+
   const dbPayload = {
     title: listingData.title || listingData.name,
     description: listingData.description || '',
     category: listingData.category,
-    sub_category: listingData.subCategory || listingData.sub_category,
+    sub_category: listingData.subCategory || listingData.sub_category || 'all',
     bucket_key: bucketKey,
     price: listingData.price || listingData.rates || 'Contact for Price',
     seller_name: listingData.sellerName || listingData.seller_name || 'Verified Member',
@@ -119,6 +204,8 @@ export async function createListingInDB(listingData) {
     lng: listingData.lng !== undefined && listingData.lng !== null ? Number(listingData.lng) : null,
     image_url: primaryCover,
     image_urls: imageUrlsArray,
+    video_urls: videoUrlsArray,
+    videos: videoObjects,
     interest_count: Number(listingData.interestCount || listingData.interest_count || 0),
     is_active: true,
     created_at: new Date().toISOString(),
@@ -148,8 +235,65 @@ export async function createListingInDB(listingData) {
 }
 
 /**
- * Universal Listing Publisher
- * Persists to Supabase DB and updates the local in-memory store slice immediately
+ * 4. Fetch Live Listings with Video & PostGIS Hydration
+ */
+export async function fetchLiveListingsFromSupabase(selectedCity = 'Alwar') {
+  if (!supabase) return null;
+  try {
+    const { data, error } = await supabase
+      .from('listings')
+      .select('*')
+      .eq('is_active', true)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    return (data || []).map((row) => {
+      const rowImages =
+        row.image_urls && row.image_urls.length > 0
+          ? row.image_urls
+          : row.image_url
+          ? [row.image_url]
+          : [getCategoryFallback(row.category)];
+
+      const rowVideos = Array.isArray(row.videos) ? row.videos : [];
+      const rowVideoUrls = Array.isArray(row.video_urls) ? row.video_urls : [];
+
+      return {
+        id: row.id,
+        category: row.category,
+        subCategory: row.sub_category,
+        bucketKey: row.bucket_key,
+        title: row.title,
+        name: row.title,
+        description: row.description,
+        price: row.price,
+        rates: row.price,
+        sellerName: row.seller_name,
+        phone: row.phone,
+        whatsapp: row.whatsapp,
+        location: row.location_name,
+        city: selectedCity,
+        lat: row.lat,
+        lng: row.lng,
+        image: rowImages[0],
+        images: rowImages,
+        image_urls: rowImages,
+        videos: rowVideos,
+        video_urls: rowVideoUrls.length > 0 ? rowVideoUrls : rowVideos.map((v) => v.url).filter(Boolean),
+        interestCount: row.interest_count || 0,
+        interest_count: row.interest_count || 0,
+        createdAt: row.created_at,
+      };
+    });
+  } catch (err) {
+    console.warn('Supabase fetch error, using local offline store:', err);
+    return null;
+  }
+}
+
+/**
+ * 5. Universal Listing Publisher
  */
 export async function publishHyperlocalListing(category, payload) {
   const finalCategory = (category || payload.category || 'property').toLowerCase();
@@ -163,6 +307,12 @@ export async function publishHyperlocalListing(category, payload) {
       ? [payload.image]
       : [getCategoryFallback(finalCategory)];
 
+  const videoObjects = Array.isArray(payload.videos) ? payload.videos : [];
+  const videoUrls =
+    Array.isArray(payload.video_urls) && payload.video_urls.length > 0
+      ? payload.video_urls
+      : videoObjects.map((v) => (typeof v === 'string' ? v : v.url)).filter(Boolean);
+
   const formattedItem = {
     id: payload.id || `item_${Date.now()}`,
     ...payload,
@@ -170,16 +320,16 @@ export async function publishHyperlocalListing(category, payload) {
     image: imageUrls[0],
     images: imageUrls,
     image_urls: imageUrls,
+    videos: videoObjects,
+    video_urls: videoUrls,
     interestCount: Number(payload.interestCount || payload.interest_count || 0),
     interest_count: Number(payload.interestCount || payload.interest_count || 0),
     status: 'ACTIVE',
     createdAt: 'Just now',
   };
 
-  // 1. Sync to Supabase Database
   await createListingInDB(formattedItem);
 
-  // 2. Sync to local state store slice
   const sliceMap = {
     property: 'propertyListings',
     advertising: 'advertisingProviders',
@@ -196,6 +346,8 @@ export async function publishHyperlocalListing(category, payload) {
     'white-collar': 'whiteCollarListings',
     recommerce: 'reCommerceListings',
     transport: 'transportFirms',
+    transporters: 'transportFirms',
+    vehicles: 'vehiclesListings',
   };
 
   const targetSlice = sliceMap[finalCategory] || 'propertyListings';
@@ -279,7 +431,7 @@ export function getCategoryFallback(catId) {
     restaurants: 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=700',
     advertising: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=700',
     community: 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?w=700',
-    construction: 'https://images.unsplash.com/photo-1541888946425-d0fbb186156f?w=700',
+    construction: 'https://images.unsplash.com/photo-1504307651254-35680f356dfd?w=700',
     creators: 'https://images.unsplash.com/photo-1574717024653-61fd2cf4d44d?w=700',
     education: 'https://images.unsplash.com/photo-1523240795612-9a054b0db644?w=700',
     fitness: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=700',

@@ -76,7 +76,28 @@ export function normalizeDBListing(item) {
     allImages = [coverImage];
   }
 
-  // 2. Price & Rates
+  // 🌟 2. Video Resolution (Handles video objects and string URLs)
+  let allVideos = [];
+  if (Array.isArray(item.videos) && item.videos.length > 0) {
+    allVideos = item.videos;
+  } else if (typeof item.videos === 'string' && item.videos.startsWith('[')) {
+    try {
+      allVideos = JSON.parse(item.videos);
+    } catch {}
+  }
+
+  let allVideoUrls = [];
+  if (Array.isArray(item.video_urls) && item.video_urls.length > 0) {
+    allVideoUrls = item.video_urls.filter(Boolean);
+  } else if (allVideos.length > 0) {
+    allVideoUrls = allVideos.map((v) => (typeof v === 'string' ? v : v?.url)).filter(Boolean);
+  } else if (typeof item.video_urls === 'string' && item.video_urls.startsWith('[')) {
+    try {
+      allVideoUrls = JSON.parse(item.video_urls);
+    } catch {}
+  }
+
+  // 3. Price & Rates
   const priceVal =
     item.price ||
     item.rates ||
@@ -139,8 +160,8 @@ export function normalizeDBListing(item) {
     trainerName: personOrBiz,
     providerName: personOrBiz,
     doctorName: personOrBiz,
-    phone: item.phone || '9876543210',
-    whatsapp: item.whatsapp || item.phone || '9876543210',
+    phone: item.phone || '9876543201',
+    whatsapp: item.whatsapp || item.phone || '9876543201',
     city: resolvedCity,
     location: rawLocation,
     landmark: item.landmark || rawLocation || 'Main Road',
@@ -155,6 +176,8 @@ export function normalizeDBListing(item) {
     image: coverImage,
     images: allImages.length > 0 ? allImages : [coverImage],
     image_urls: allImages.length > 0 ? allImages : [coverImage],
+    videos: allVideos,
+    video_urls: allVideoUrls,
     photo: coverImage,
     avatar: coverImage,
     description: item.description || '',
@@ -509,12 +532,11 @@ export const hyperlocalStore = new HyperlocalEngineStore();
 
 /**
  * ⚡ Ultra-fast Light Hydration
- * Uses targeted column selection and limits to download in <150ms
+ * Selects essential display columns including video_urls and videos
  */
 export async function hydrateFromDB() {
   if (!supabase) return;
   try {
-    // 1. Fetch only essential display columns (Limit 60 on initial boot)
     const { data: listingsData, error: listingsError } = await supabase
       .from('listings')
       .select(`
@@ -533,6 +555,8 @@ export async function hydrateFromDB() {
         lng,
         image_url,
         image_urls,
+        video_urls,
+        videos,
         interest_count,
         is_active,
         created_at
@@ -545,7 +569,6 @@ export async function hydrateFromDB() {
       hyperlocalStore.hydrateBulk(listingsData);
     }
 
-    // 2. Fetch Active Threads (Limit 60)
     const { data: threadsData, error: threadsError } = await supabase
       .from('listing_threads')
       .select('id, listing_id, user_name, user_area, comment_text, seller_reply, is_public, created_at')
@@ -564,7 +587,6 @@ let realtimeChannel = null;
 
 /**
  * ⚡ Non-blocking Realtime Subscription
- * Connects WebSocket on idle time after initial paint
  */
 export function initRealtimeSubscriptions() {
   if (realtimeChannel || !supabase) return;
@@ -628,7 +650,6 @@ export function initRealtimeSubscriptions() {
       .subscribe();
   };
 
-  // Defer connection to avoid competing with startup rendering
   if ('requestIdleCallback' in window) {
     window.requestIdleCallback(startSocket, { timeout: 1500 });
   } else {

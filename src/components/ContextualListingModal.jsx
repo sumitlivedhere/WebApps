@@ -1,7 +1,12 @@
 import React, { useState, useRef, useMemo } from 'react';
 import { TAXONOMY_REGISTRY, getCategoryById, sanitizeSubCategoryId } from '../data/taxonomyRegistry';
 import { hyperlocalStore } from '../store/hyperlocalStore';
-import { uploadListingImagesToStorage, getCategoryFallback } from '../services/listingService';
+import {
+  uploadListingImagesToStorage,
+  uploadListingVideosToStorage,
+  getCategoryFallback,
+} from '../services/listingService';
+import { processVideoOptimistic } from '../utils/videoCompressor';
 
 export default function ContextualListingModal({
   currentScreen,
@@ -50,11 +55,16 @@ export default function ContextualListingModal({
   const [phone, setPhone] = useState('');
   const [description, setDescription] = useState('');
 
-  // 🖼️ 2. Multi-Image (Up to 10) & Cover Image Selection State
+  // 🖼️ 2. Multi-Photo State (Up to 10 photos) with Cover Image Selector
   const fileInputRef = useRef(null);
   const [selectedFiles, setSelectedFiles] = useState([]); // Raw File[]
   const [previewUrls, setPreviewUrls] = useState([]);     // Local blob URL[]
   const [coverIndex, setCoverIndex] = useState(0);         // Index of chosen cover photo
+
+  // 🎬 3. Video Upload State (Up to 2 videos, max 60 sec each)
+  const videoInputRef = useRef(null);
+  const [selectedVideos, setSelectedVideos] = useState([]); // [{ file, previewUrl, posterUrl, durationStr, durationSec, sizeMb }]
+  const [isProcessingVideo, setIsProcessingVideo] = useState(false);
 
   // 📍 Location & Submission State
   const [locationAddress, setLocationAddress] = useState('');
@@ -64,7 +74,7 @@ export default function ContextualListingModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
-  // 📸 Multi-File Selection Handler (Max 10)
+  // 📸 Multi-Photo Selection Handler (Max 10)
   const handleMultipleFiles = (e) => {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
@@ -95,6 +105,42 @@ export default function ContextualListingModal({
     } else if (coverIndex > indexToRemove) {
       setCoverIndex((prev) => prev - 1);
     }
+  };
+
+  // 🎬 High-Speed Optimistic Video Pipeline (<100ms Poster Generation)
+  const handleVideoUpload = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+
+    if (selectedVideos.length + files.length > 2) {
+      setErrorMsg('Maximum 2 product / service videos allowed per listing.');
+      return;
+    }
+
+    setErrorMsg('');
+    setIsProcessingVideo(true);
+
+    try {
+      for (const file of files) {
+        const processed = await processVideoOptimistic(file);
+
+        if (processed.durationSec > 60.5) {
+          setErrorMsg(`"${file.name}" is ${processed.durationSec}s long. Videos must be 60 seconds or less.`);
+          continue;
+        }
+
+        setSelectedVideos((prev) => [...prev, processed].slice(0, 2));
+      }
+    } catch (err) {
+      setErrorMsg('Could not process video file. Please ensure it is a valid MP4, WebM, or MOV format.');
+    } finally {
+      setIsProcessingVideo(false);
+      if (videoInputRef.current) videoInputRef.current.value = '';
+    }
+  };
+
+  const handleRemoveVideo = (indexToRemove) => {
+    setSelectedVideos((prev) => prev.filter((_, idx) => idx !== indexToRemove));
   };
 
   const handleDetectGPS = () => {
@@ -136,60 +182,76 @@ export default function ContextualListingModal({
     const cleanSub = sanitizeSubCategoryId(category, subCategory);
     const fallbackImg = getCategoryFallback(category);
 
-    // 1. Upload files to storage
-    let uploadedUrls = [];
-    if (selectedFiles.length > 0) {
-      // Re-order files so the selected cover photo is uploaded at index 0
-      const orderedFiles = [...selectedFiles];
-      const [chosenCoverFile] = orderedFiles.splice(coverIndex, 1);
-      orderedFiles.unshift(chosenCoverFile);
+    try {
+      // 1. Order photos so the selected cover photo is uploaded at index 0
+      const orderedPhotos = [...selectedFiles];
+      if (orderedPhotos.length > 0 && coverIndex < orderedPhotos.length) {
+        const [chosenCoverFile] = orderedPhotos.splice(coverIndex, 1);
+        orderedPhotos.unshift(chosenCoverFile);
+      }
 
-      uploadedUrls = await uploadListingImagesToStorage(orderedFiles);
+      // 🌟 2. Upload Photos & Videos to Supabase Storage in parallel
+      const [uploadedPhotoUrls, uploadedVideoObjects] = await Promise.all([
+        orderedPhotos.length > 0
+          ? uploadListingImagesToStorage(orderedPhotos)
+          : Promise.resolve([]),
+        selectedVideos.length > 0
+          ? uploadListingVideosToStorage(selectedVideos)
+          : Promise.resolve([]),
+      ]);
+
+      const finalImages = uploadedPhotoUrls.length > 0 ? uploadedPhotoUrls : [fallbackImg];
+
+      const newListing = {
+        id: `custom-${Date.now()}`,
+        category,
+        subCategory: cleanSub,
+        title: title.trim(),
+        name: title.trim(),
+        price: price.trim() || 'Contact for Price',
+        rates: price.trim() || 'Contact for Price',
+        sellerName: sellerName.trim(),
+        phone: phone.trim() || '9876543201',
+        whatsapp: phone.trim() || '9876543201',
+        location: locationAddress.trim(),
+        city: selectedCity,
+        lat: gpsData ? gpsData.lat : null,
+        lng: gpsData ? gpsData.lng : null,
+        mapUrl: gpsData
+          ? `https://www.google.com/maps/search/?api=1&query=${gpsData.lat},${gpsData.lng}`
+          : null,
+        image: finalImages[0],                                 // Primary cover image
+        images: finalImages,                                   // Full photo carousel
+        image_urls: finalImages,
+        videos: uploadedVideoObjects,                          // Video objects with public CDN URLs & metadata
+        video_urls: uploadedVideoObjects.map((v) => v.url),    // Public video CDN URLs
+        description: description.trim(),
+        badge: gpsData ? '📍 GPS Pinpoint Attached' : 'Verified Listing',
+        isNew: true,
+        created_at: new Date().toISOString(),
+      };
+
+      await hyperlocalStore.insertListing(categoryConfig.bucketKey || 'listings', newListing);
+
+      // Trigger town notification
+      hyperlocalStore.addNotification({
+        id: `notif_${Date.now()}`,
+        title: '🎉 Listing Published!',
+        message: `"${newListing.title}" with photos & videos is live in ${categoryConfig.name || category}.`,
+        category,
+        subCategory: cleanSub,
+        targetId: newListing.id,
+        timestamp: 'Just now',
+        read: false,
+      });
+
+      setIsSubmitting(false);
+      onClose();
+    } catch (err) {
+      console.error('Submission failed:', err);
+      setErrorMsg('Error uploading files to storage. Please try again.');
+      setIsSubmitting(false);
     }
-
-    const finalImages = uploadedUrls.length > 0 ? uploadedUrls : [fallbackImg];
-
-    const newListing = {
-      id: `custom-${Date.now()}`,
-      category,
-      subCategory: cleanSub,
-      title: title.trim(),
-      name: title.trim(),
-      price: price.trim() || 'Contact for Price',
-      rates: price.trim() || 'Contact for Price',
-      sellerName: sellerName.trim(),
-      phone: phone.trim() || '9876543201',
-      whatsapp: phone.trim() || '9876543201',
-      location: locationAddress.trim(),
-      city: selectedCity,
-      lat: gpsData ? gpsData.lat : null,
-      lng: gpsData ? gpsData.lng : null,
-      mapUrl: gpsData ? `https://www.google.com/maps/search/?api=1&query=${gpsData.lat},${gpsData.lng}` : null,
-      image: finalImages[0],      // Selected cover image
-      images: finalImages,        // All gallery photos
-      image_urls: finalImages,
-      description: description.trim(),
-      badge: gpsData ? '📍 GPS Pinpoint Attached' : 'Verified Listing',
-      isNew: true,
-      created_at: new Date().toISOString(),
-    };
-
-    await hyperlocalStore.insertListing(categoryConfig.bucketKey || 'listings', newListing);
-    
-    // Trigger town notification
-    hyperlocalStore.addNotification({
-      id: `notif_${Date.now()}`,
-      title: '🎉 Listing Published!',
-      message: `"${newListing.title}" is now active in ${categoryConfig.name || category}.`,
-      category,
-      subCategory: cleanSub,
-      targetId: newListing.id,
-      timestamp: 'Just now',
-      read: false,
-    });
-
-    setIsSubmitting(false);
-    onClose();
   };
 
   return (
@@ -275,7 +337,7 @@ export default function ContextualListingModal({
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <label className="text-[10px] font-bold text-slate-300 uppercase tracking-wider">
-                Photos / Service Proof ({previewUrls.length}/10)
+                Photos / Proof ({previewUrls.length}/10)
               </label>
               <span className="text-[9px] text-amber-400 font-bold">
                 Tap photo to set as Cover 🌟
@@ -299,7 +361,7 @@ export default function ContextualListingModal({
                     >
                       <img src={imgSrc} alt={`Upload ${idx + 1}`} className="w-full h-full object-cover" />
 
-                      {/* Cover Photo Badge */}
+                      {/* Cover Badge */}
                       {isCover ? (
                         <span className="absolute bottom-1 left-1 bg-amber-400 text-slate-950 text-[8px] font-black px-1.5 py-0.5 rounded-md shadow-md flex items-center space-x-0.5">
                           <span>★</span>
@@ -329,13 +391,13 @@ export default function ContextualListingModal({
               </div>
             )}
 
-            {/* Upload Button Box */}
+            {/* Upload Photos Trigger */}
             {previewUrls.length < 10 && (
               <div
                 onClick={() => fileInputRef.current?.click()}
-                className="h-20 border-2 border-dashed border-slate-700 hover:border-amber-400/80 rounded-2xl flex flex-col items-center justify-center cursor-pointer bg-slate-950/60 transition group p-2 text-center"
+                className="h-16 border-2 border-dashed border-slate-700 hover:border-amber-400/80 rounded-2xl flex flex-col items-center justify-center cursor-pointer bg-slate-950/60 transition group p-2 text-center"
               >
-                <span className="text-xl group-hover:scale-110 transition">📸</span>
+                <span className="text-lg group-hover:scale-110 transition">📸</span>
                 <span className="text-[10px] font-black text-slate-300 mt-0.5">
                   + Add Photos (Upload up to 10)
                 </span>
@@ -355,7 +417,81 @@ export default function ContextualListingModal({
             />
           </div>
 
-          {/* 4. Title */}
+          {/* 🎬 4. SHORT VIDEO UPLOAD (UP TO 2 VIDEOS, MAX 60 SEC) */}
+          <div className="space-y-2 p-3 bg-slate-950/70 rounded-2xl border border-slate-800">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-1.5">
+                <span className="text-sm">🎬</span>
+                <label className="text-[10px] font-black text-cyan-300 uppercase tracking-wider">
+                  Product / Service Videos ({selectedVideos.length}/2)
+                </label>
+              </div>
+              <span className="text-[9px] text-slate-400 font-bold">
+                Max 60s • Auto-Optimized ⚡
+              </span>
+            </div>
+
+            {/* Video Previews */}
+            {selectedVideos.length > 0 && (
+              <div className="grid grid-cols-2 gap-2">
+                {selectedVideos.map((vid, idx) => (
+                  <div key={idx} className="relative h-24 rounded-xl overflow-hidden border border-cyan-500/40 bg-black group shadow-md">
+                    <img
+                      src={vid.posterUrl}
+                      alt="video preview"
+                      className="w-full h-full object-cover opacity-90"
+                    />
+                    
+                    {/* Duration & Size Badges */}
+                    <div className="absolute bottom-1.5 left-1.5 flex items-center space-x-1">
+                      <span className="bg-slate-950/90 text-cyan-300 text-[8px] font-mono font-black px-1.5 py-0.5 rounded-md border border-cyan-400/30">
+                        ⏱️ {vid.durationStr}
+                      </span>
+                      {vid.sizeMb && (
+                        <span className="bg-emerald-950/90 text-emerald-400 text-[8px] font-mono font-bold px-1.5 py-0.5 rounded-md border border-emerald-500/30">
+                          {vid.sizeMb} MB
+                        </span>
+                      )}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveVideo(idx)}
+                      className="absolute top-1.5 right-1.5 bg-rose-600 hover:bg-rose-500 text-white w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black cursor-pointer shadow-md active:scale-90"
+                      title="Remove video"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Upload Video Trigger */}
+            {selectedVideos.length < 2 && (
+              <div
+                onClick={() => !isProcessingVideo && videoInputRef.current?.click()}
+                className="h-16 border-2 border-dashed border-cyan-500/40 hover:border-cyan-400 rounded-2xl flex flex-col items-center justify-center cursor-pointer bg-cyan-950/20 transition group p-2 text-center"
+              >
+                <span className="text-lg group-hover:scale-110 transition">🎥</span>
+                <span className="text-[10px] font-black text-cyan-300 mt-0.5">
+                  {isProcessingVideo ? 'Reading Video Frame...' : '+ Upload Video (Instant 60s Reel)'}
+                </span>
+                <span className="text-[8px] text-slate-400">MP4, WebM or MOV format</span>
+              </div>
+            )}
+
+            <input
+              ref={videoInputRef}
+              type="file"
+              accept="video/*"
+              multiple
+              className="hidden"
+              onChange={handleVideoUpload}
+            />
+          </div>
+
+          {/* 5. Title */}
           <div>
             <label className="block text-[10px] font-bold text-slate-400 mb-1">
               Business / Listing Title *
@@ -370,7 +506,7 @@ export default function ContextualListingModal({
             />
           </div>
 
-          {/* 5. Price & Seller Name */}
+          {/* 6. Price & Seller Name */}
           <div className="grid grid-cols-2 gap-2">
             <div>
               <label className="block text-[10px] font-bold text-slate-400 mb-1">
@@ -399,7 +535,7 @@ export default function ContextualListingModal({
             </div>
           </div>
 
-          {/* 6. Phone Number */}
+          {/* 7. Phone Number */}
           <div>
             <label className="block text-[10px] font-bold text-slate-400 mb-1">
               Phone / WhatsApp Number *
@@ -415,7 +551,7 @@ export default function ContextualListingModal({
             />
           </div>
 
-          {/* 📍 7. Address & GPS */}
+          {/* 📍 8. Address & GPS */}
           <div className="space-y-2.5 p-3 bg-slate-950/80 rounded-2xl border border-slate-800">
             <div>
               <label className="block text-[10px] font-bold text-slate-400 mb-1">
@@ -472,7 +608,7 @@ export default function ContextualListingModal({
             )}
           </div>
 
-          {/* 8. Detailed Description */}
+          {/* 9. Detailed Description */}
           <div>
             <label className="block text-[10px] font-bold text-slate-400 mb-1">
               Detailed Description / Amenities / Specs
@@ -486,13 +622,13 @@ export default function ContextualListingModal({
             ></textarea>
           </div>
 
-          {/* 9. Submit Button */}
+          {/* 10. Submit Button */}
           <button
             type="submit"
-            disabled={isSubmitting}
+            disabled={isSubmitting || isProcessingVideo}
             className="w-full py-3 bg-gradient-to-r from-amber-400 to-yellow-400 hover:from-amber-300 text-slate-950 font-black text-xs rounded-2xl shadow-lg active:scale-95 transition cursor-pointer disabled:opacity-50"
           >
-            {isSubmitting ? 'Uploading Photos & Saving...' : '🚀 Publish Live to TownHub'}
+            {isSubmitting ? 'Uploading Media & Saving...' : '🚀 Publish Live to TownHub'}
           </button>
         </form>
       </div>
